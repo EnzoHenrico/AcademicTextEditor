@@ -61,6 +61,12 @@ num exportador PDF/CLI depois. A única costura Core↔App é a interface `IText
 - **`Render(DrawingContext)` só desenha** — nunca faz I/O nem recalcula layout.
 - **Texto digitado vem do evento `TextInput`**, não de `KeyDown.Key` (IME e layouts internacionais).
 - **Save é atômico**: escreve em `.tmp` no mesmo diretório e faz `File.Move(..., overwrite: true)`.
+- **`LaidOutLine` é lista de `LaidOutRun` desde o MVP**, mesmo com o parser emitindo um run
+  por bloco. O line breaker já quebra sobre runs heterogêneos — assim `**negrito**` depois é
+  trabalho de parser, não cirurgia no coração do motor.
+- **Caret e navegação moram no Core** (`State/`), não no `PageSurface`. Mover o caret por
+  linha/página exige consultar o `PaginatedDocument`, que é do Core; como função pura
+  `(offset, PaginatedDocument) → offset`, isso é testável sem subsistema gráfico.
 
 ## Estilo de código
 

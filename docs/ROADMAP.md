@@ -59,52 +59,89 @@ com o Core vazio é trivial; depois de 40 arquivos de motor, é refatoração ca
 **Objetivo:** abrir um `.md`, editar, ver a paginação recalcular, salvar, reabrir e obter o
 mesmo conteúdo. É aqui que o diferencial do produto (paginação como layout) fica de pé.
 
-### Buffer de texto
+A fase é atacada em **fatias verticais**, não camada por camada. O motivo é o risco: o
+`ITextMeasurer` é implementado com Avalonia mas chamado de dentro do `LayoutEngine`, que roda
+em `Task.Run`. Se as APIs de medição do Avalonia exigirem UI thread, a decisão "layout roda em
+background" cai — e numa ordem horizontal isso só apareceria com o motor inteiro já escrito
+em cima dela. A Fatia 2 põe texto na tela cedo justamente para resolver isso enquanto o motor
+ainda é pequeno.
+
+### Fatia 1 — Motor de layout no Core, sem UI
+
+Markup (subconjunto mínimo):
+- [x] AST: `TextStyle` (enum de peso próprio do Core), `InlineRun` (Text, SourceStart, Style),
+      `ParagraphNode`, `HeadingNode`, `PageBreakNode`, `DocumentNode`
+- [x] `MarkupTokenizer` + `MarkupParser` — parágrafo, `#`..`######`, quebra explícita;
+      cada bloco emite **um** `InlineRun`
+- [x] `MarkupParserTests`: tabela markup → AST esperado
+
+Layout/paginação:
+- [ ] `PageSettings` (A4/Letter + margens, em pontos; `ContentWidthPt`/`ContentHeightPt`;
+      `HeaderReservedHeightPt`/`FooterReservedHeightPt` já no tipo, 0 no MVP)
+- [ ] `ITextMeasurer` no Core: `MeasureWidthPt(ReadOnlySpan<char>, TextStyle)` +
+      `GetLineMetrics(TextStyle)` — `Span` para o line breaker medir fatias sem alocar
+- [ ] `LineBreaker` greedy word-wrap sobre a sequência de runs do bloco
+- [ ] `PageBreaker` empilhando linhas até `ContentHeightPt`, respeitando `PageBreakNode`
+- [ ] `LayoutEngine` produzindo `PaginatedDocument` imutável
+- [ ] Model imutável: `LaidOutRun`, `LaidOutLine` (com `SourceStart`/`SourceLength`),
+      `PageLayout`, `PaginatedDocument`
+- [ ] `LineBreakerTests`/`PageBreakerTests` com `FakeTextMeasurer` determinístico
+- [ ] Casos de borda: palavra mais larga que a página, parágrafo vazio, quebra explícita,
+      documento vazio produzindo 1 página (não 0)
+
+### Fatia 2 — Página A4 na tela
+
+- [ ] **Spike descartável:** medir texto com a API candidata do Avalonia de dentro de um
+      `Task.Run`. Se falhar, o fallback é medir na UI thread atrás de cache e registrar a
+      mudança de decisão no `CLAUDE.md` — não silenciosamente
+- [ ] `AvaloniaTextMeasurer` em `Rendering/` (preferir advances de `GlyphTypeface`, que são
+      dado de fonte e não estado de UI, a `TextLayout`/`FormattedText`)
+- [ ] `PageRenderer` desenhando páginas com espaçamento visual entre elas
+- [ ] Conversão pt → DIP (`* 96/72`) numa constante única do `PageRenderer`
+- [ ] `PageSurface : Control` em `Controls/`, dentro de `ScrollViewer`; `Render` só desenha;
+      `MeasureOverride` devolve a altura total para o scroll funcionar
+- [ ] `EditorViewModel` (MVVM leve, sem framework) guardando o `PaginatedDocument` corrente
+- [ ] Critério: `./dev.sh run` mostra folha A4 com margens e texto fixo já paginado
+
+### Fatia 3 — Buffer editável e digitação
+
 - [ ] `Piece` (`readonly struct`: Source, Start, Length) e `PieceTable` com `Insert`/`Delete`
 - [ ] `TextBufferSnapshot` imutável, consumido pelo layout sem travar a digitação
+- [ ] `EditorDocument` orquestrando buffer + evento de mudança (`TextEdit`)
+- [ ] `PieceTableTests`: insert início/meio/fim, delete dentro/cruzando/consumindo pieces
+- [ ] Teste diferencial de stress: N edições aleatórias com seed fixo vs. `StringBuilder`
+- [ ] Texto digitado vindo do evento `TextInput` (não `KeyDown.Key`), por IME e layouts
+      internacionais
+- [ ] Recompute em background (`Task.Run`) + publicação via `Dispatcher.UIThread.Post` +
+      debounce; layout obsoleto cancelado e número de geração impedindo publicação fora de ordem
+
+### Fatia 4 — Caret e navegação (no Core)
+
+- [ ] `Caret` em `State/`: `Offset` no buffer + `DesiredColumnPt` (coluna alvo que sobrevive
+      a ↑/↓ passando por linhas curtas)
+- [ ] `CaretNavigator` — funções puras `(offset, PaginatedDocument) → offset` para setas,
+      Home/End, PageUp/PageDown, usando `LaidOutLine.SourceStart`/`SourceLength`
+- [ ] `CaretNavigatorTests`: bordas do documento, coluna alvo preservada, Home/End em linha
+      com wrap (limite visual, não do parágrafo), navegação cruzando fronteira de página
+- [ ] Caret desenhado pelo `PageRenderer`; `PageSurface` só traduz tecla em chamada ao Core
+
+### Fatia 5 — Undo/redo, arquivo e atalhos
+
 - [ ] `UndoRedoStack` guardando delta estrutural da piece list, não cópias de texto
-- [ ] `EditorDocument` orquestrando buffer + histórico + evento de mudança (`TextEdit`)
-- [ ] `PieceTableTests`: insert início/meio/fim, delete cruzando pieces, undo/redo encadeado
-- [ ] Teste diferencial de stress: N edições aleatórias vs. `StringBuilder` de referência
-
-### Markup (subconjunto mínimo)
-- [ ] `MarkupTokenizer` + `MarkupParser`
-- [ ] AST: `ParagraphNode`, `HeadingNode`, `InlineRun` (span com estilo), quebra de página explícita
-- [ ] `MarkupParserTests`: tabela markup → AST esperado
-
-### Motor de layout / paginação
-- [ ] `PageSettings` (A4/Letter + margens, em pontos; `ContentWidthPt`/`ContentHeightPt`)
-- [ ] `ITextMeasurer` no Core + `AvaloniaTextMeasurer` no App
-- [ ] `LineBreaker` greedy word-wrap; `LaidOutLine` guardando `SourceStart`/`SourceLength`
-- [ ] `PageBreaker` com `HeaderReservedHeightPt`/`FooterReservedHeightPt` reservados (0 no MVP)
-- [ ] `LayoutEngine` produzindo `PaginatedDocument` imutável
-- [ ] Recompute em background (`Task.Run`) + publicação via `Dispatcher.UIThread.Post` + debounce
-- [ ] `LineBreakerTests`/`PageBreakerTests` com `FakeTextMeasurer` determinístico
-- [ ] Casos de borda: palavra mais larga que a página, parágrafo vazio, quebra explícita
-
-### Renderização e input
-- [ ] `PageSurface : Control` em `Controls/`, dentro de `ScrollViewer`; `Render` só desenha
-- [ ] `PageRenderer` desenhando páginas com espaçamento visual entre elas
-- [ ] Conversão pt → DIP (`* 96/72`) isolada na camada de renderização
-- [ ] Digitação via evento `TextInput` (não `KeyDown.Key`), por causa de IME e layouts internacionais
-- [ ] Caret e navegação básica (setas, Home/End, PageUp/PageDown)
-
-### Arquivo
+- [ ] Testes de undo/redo encadeado e de redo invalidado por edição nova
 - [ ] `IDocumentStorage` + `FileDocumentStorage` async
-- [ ] Save atômico: escreve `.tmp` no mesmo diretório e `File.Move(..., overwrite: true)`
+- [ ] Save atômico: `.tmp` no mesmo diretório (mesmo volume) e `File.Move(..., overwrite: true)`
 - [ ] Detecção de BOM/encoding e normalização CRLF/LF
-- [ ] Diálogos nativos via `IStorageProvider`
-- [ ] `FileDocumentStorageTests`: falha no meio da escrita não corrompe o original
-
-### Atalhos
+- [ ] `FileDocumentStorageTests`: falha no meio da escrita não corrompe o original; round-trip
 - [ ] `CommandId`, `ShortcutScope`, `ChordSequence`, `KeyBindingRegistry` (já suportando N passos)
 - [ ] `ShortcutDispatcher` no `PreviewKeyDown` (tunneling) + `FocusScopeTracker`
 - [ ] Bindings: `Ctrl+S`, `Ctrl+O`, `Ctrl+Z`/`Ctrl+Y`
+- [ ] Diálogos nativos via `IStorageProvider`
 
-### Fechamento da fase
+### Fatia 6 — Fechamento da fase
 - [ ] Teste manual end-to-end via `./dev.sh run`
 - [ ] Documento longo (~300 páginas) para medir latência de repaginação e decidir se o
-      reflow incremental precisa ser antecipado da Fase 4
+      reflow incremental precisa ser antecipado da Fase 4. Registrar o número medido aqui
 
 ---
 
