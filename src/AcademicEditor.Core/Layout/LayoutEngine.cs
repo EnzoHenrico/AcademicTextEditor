@@ -13,7 +13,16 @@ namespace AcademicEditor.Core.Layout;
 /// </remarks>
 public static class LayoutEngine
 {
-    public static PaginatedDocument Layout(DocumentNode document, PageSettings settings, ITextMeasurer measurer)
+    /// <param name="cancellationToken">
+    /// Verificado entre blocos. Paginar um documento longo custa, e a tecla seguinte já torna o
+    /// resultado obsoleto — abandonar cedo devolve a thread em vez de terminar um cálculo que
+    /// ninguém vai publicar.
+    /// </param>
+    public static PaginatedDocument Layout(
+        DocumentNode document,
+        PageSettings settings,
+        ITextMeasurer measurer,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(measurer);
@@ -24,6 +33,8 @@ public static class LayoutEngine
 
         foreach (var block in document.Blocks)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (block is PageBreakNode)
             {
                 breaker.ForcePageBreak();

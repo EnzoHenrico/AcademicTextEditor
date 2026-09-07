@@ -3,6 +3,7 @@ using AcademicEditor.App.ViewModels;
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Media;
 
 namespace AcademicEditor.App.Controls;
@@ -17,6 +18,8 @@ namespace AcademicEditor.App.Controls;
 public sealed class PageSurface : Control
 {
     private EditorViewModel? _viewModel;
+
+    public PageSurface() => Focusable = true;
 
     public EditorViewModel? ViewModel
     {
@@ -54,6 +57,66 @@ public sealed class PageSurface : Control
         }
 
         PageRenderer.Render(context, _viewModel.Paginated, Bounds.Width);
+    }
+
+    // O texto digitado vem daqui, e não de KeyDown.Key. KeyDown entrega a tecla física; este
+    // evento entrega o caractere já composto pelo layout de teclado e pelo IME — é a diferença
+    // entre receber "ç" e receber a tecla que, num teclado ABNT2, calha de produzi-lo.
+    protected override void OnTextInput(TextInputEventArgs e)
+    {
+        if (_viewModel is null || string.IsNullOrEmpty(e.Text))
+        {
+            return;
+        }
+
+        // Algumas plataformas mandam controle por aqui (backspace, retorno). Esses são comandos,
+        // tratados no KeyDown; deixá-los entrar como texto escreveria lixo no buffer.
+        if (e.Text.Length == 1 && char.IsControl(e.Text[0]))
+        {
+            return;
+        }
+
+        _viewModel.InsertText(e.Text);
+        e.Handled = true;
+    }
+
+    // Teclas que não produzem texto. Marcar Handled impede que o Enter chegue depois como "\r"
+    // pelo TextInput e vire uma segunda quebra de linha.
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            base.OnKeyDown(e);
+            return;
+        }
+
+        switch (e.Key)
+        {
+            case Key.Back:
+                _viewModel.DeleteBackward();
+                e.Handled = true;
+                break;
+
+            case Key.Delete:
+                _viewModel.DeleteForward();
+                e.Handled = true;
+                break;
+
+            case Key.Enter:
+                _viewModel.InsertText("\n");
+                e.Handled = true;
+                break;
+
+            default:
+                base.OnKeyDown(e);
+                break;
+        }
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        Focus();
     }
 
     protected override Size MeasureOverride(Size availableSize)

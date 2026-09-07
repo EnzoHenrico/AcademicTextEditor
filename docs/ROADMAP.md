@@ -123,17 +123,33 @@ Duas coisas que a fatia expôs e ficam registradas:
   pegaria isso — é o primeiro argumento concreto a favor do `tests/AcademicEditor.App.Tests/`
   previsto para a Fase 4
 
-### Fatia 3 — Buffer editável e digitação
+### Fatia 3 — Buffer editável e digitação ✅
 
-- [ ] `Piece` (`readonly struct`: Source, Start, Length) e `PieceTable` com `Insert`/`Delete`
-- [ ] `TextBufferSnapshot` imutável, consumido pelo layout sem travar a digitação
-- [ ] `EditorDocument` orquestrando buffer + evento de mudança (`TextEdit`)
-- [ ] `PieceTableTests`: insert início/meio/fim, delete dentro/cruzando/consumindo pieces
-- [ ] Teste diferencial de stress: N edições aleatórias com seed fixo vs. `StringBuilder`
-- [ ] Texto digitado vindo do evento `TextInput` (não `KeyDown.Key`), por IME e layouts
-      internacionais
-- [ ] Recompute em background (`Task.Run`) + publicação via `Dispatcher.UIThread.Post` +
-      debounce; layout obsoleto cancelado e número de geração impedindo publicação fora de ordem
+- [x] `Piece` (`readonly struct`: Source, Start, Length) e `PieceTable` com `Insert`/`Delete`
+- [x] Caminho rápido da digitação: escrever no fim estica a última peça em vez de criar outra —
+      digitar N caracteres seguidos não faz a lista de peças crescer N vezes
+- [x] `TextBufferSnapshot` imutável, consumido pelo layout sem travar a digitação. Não copia
+      texto: o buffer de adição só recebe escrita além do comprimento registrado, e quando
+      precisa crescer é realocado, deixando o array anterior íntegro para quem o segurava —
+      é o que dispensa lock entre a digitação e o layout
+- [x] `EditorDocument` orquestrando buffer + evento de mudança (`TextEdit`)
+- [x] `PieceTableTests`: insert início/meio/fim, delete dentro/cruzando/consumindo pieces,
+      snapshot estável a edições posteriores e ao crescimento do buffer
+- [x] Teste diferencial de stress: 3 seeds × 2.000 edições aleatórias vs. `StringBuilder`
+- [x] Texto digitado vindo do evento `TextInput` (não `KeyDown.Key`), por IME e layouts
+      internacionais; Backspace/Delete/Enter tratados no `KeyDown`, que é onde comando mora
+- [x] Backspace e Delete respeitam par substituto: apagam o caractere, não meio code point
+- [x] Recompute em background (`Task.Run`) + publicação via `Dispatcher.UIThread.Post` +
+      debounce de 50ms; layout obsoleto cancelado por `CancellationToken` (o `LayoutEngine`
+      verifica entre blocos) e número de geração impedindo publicação fora de ordem
+
+Registrado desta fatia:
+
+- **O ponto de inserção ainda não é um caret.** É um offset que anda para frente conforme se
+  digita, e o texto entra no fim do documento. Vira o `Caret` do Core na Fatia 4 — é a fatia
+  seguinte justamente porque navegar exige consultar o `PaginatedDocument`
+- **O debounce de 50ms é chute informado**, não medição. O número definitivo sai do documento
+  de ~300 páginas da Fatia 6
 
 ### Fatia 4 — Caret e navegação (no Core)
 
