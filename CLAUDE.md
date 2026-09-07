@@ -17,15 +17,17 @@ de reportar conclusão.
 
 ## Comandos
 
-`dev.sh` é local (não versionado, listado em `.git/info/exclude`). Após clonar,
-rode `./dev.sh install-hooks` para reinstalar o hook.
+`dev.sh` é versionado: a lista de alvos do publish e as flags de build são decisões do
+projeto, não da máquina. O que não vem no clone é o hook — `.git/hooks/` nunca vem —
+então rode `./dev.sh install-hooks` uma vez após clonar.
 
 ```bash
 ./dev.sh check          # o gate: arquitetura + build + testes
 ./dev.sh build          # compila a solução (Debug)
 ./dev.sh test           # testes do Core, sem Avalonia
 ./dev.sh run            # compila e abre o app
-./dev.sh publish        # executável self-contained em artifacts/linux-x64
+./dev.sh publish        # self-contained para todos os alvos, em artifacts/<rid>
+./dev.sh publish win-x64  # só um alvo (aceita RID fora da lista, para teste avulso)
 ./dev.sh clean
 ```
 

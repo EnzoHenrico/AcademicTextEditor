@@ -36,6 +36,9 @@ Commit `55f1ed6`.
 - [x] `ArchitectureTests` — mesma regra verificada no assembly compilado
 - [x] Testes negativos do gate executados: violação de arquitetura e erro de compilação, ambos bloqueando commit
 - [x] `publish` gera executável self-contained que roda sem o SDK
+- [x] `publish` multiplataforma: `linux-x64` e `win-x64` num comando, com o formato do binário
+      conferido pelos bytes mágicos — `dotnet publish` devolve 0 sem checar isso
+- [x] `dev.sh` passou a ser versionado: gerar release é decisão do projeto, não da máquina
 
 ---
 

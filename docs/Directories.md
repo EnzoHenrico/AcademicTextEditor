@@ -9,7 +9,7 @@ Padrão do projeto. **Pasta = namespace**, verificado pela guarda de namespaces 
 ├── Directory.Build.props        # TFM, Nullable, TreatWarningsAsErrors
 ├── .editorconfig  .gitignore
 ├── CLAUDE.md                    # Regras do projeto (fica na raiz por convenção da ferramenta)
-├── dev.sh                       # Script local de build/test/run — NÃO versionado
+├── dev.sh                       # Build, testes, run e publish multiplataforma
 ├── docs/                        # context.md, ROADMAP.md, este arquivo
 │
 ├── src/
