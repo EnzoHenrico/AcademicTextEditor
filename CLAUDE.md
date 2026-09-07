@@ -4,7 +4,8 @@ Editor de texto desktop multiplataforma (Windows/Linux/macOS) em C# + Avalonia, 
 para redação de trabalhos acadêmicos (artigos, teses). O autor escreve em Markdown com
 extensões acadêmicas e vê o documento **paginado em tempo real**, como ficará impresso.
 
-Ver `context.md` para o contexto original do produto.
+Ver `context.md` para o contexto original do produto e `ROADMAP.md` para as fases —
+o roadmap é documento vivo: atualize os checkboxes conforme o trabalho avança.
 
 ## Regra permanente: nada é aceito sem build verde
 
