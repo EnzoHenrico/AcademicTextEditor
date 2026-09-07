@@ -76,10 +76,11 @@ public static class MarkupParser
     {
         var style = new TextStyle(HeadingSizesPt[token.Level - 1], FontWeightKind.Bold, Italic: false);
 
-        // "# " sem texto é um heading vazio: nenhum run, e o layout lhe dá só a altura da linha.
-        IReadOnlyList<InlineRun> runs = token.ContentLength == 0
-            ? []
-            : [new InlineRun(source.Substring(token.ContentStart, token.ContentLength), token.ContentStart, style)];
+        // "# " sem texto ainda emite um run, vazio. Todo bloco com texto tem ao menos um run,
+        // e é dele que o line breaker tira a altura da linha: sem isso, um heading recém-começado
+        // seria medido com a altura do corpo e saltaria de tamanho ao receber a primeira letra.
+        var text = source.Substring(token.ContentStart, token.ContentLength);
+        IReadOnlyList<InlineRun> runs = [new InlineRun(text, token.ContentStart, style)];
 
         return new HeadingNode(token.Level, token.LineStart, token.LineLength, runs);
     }

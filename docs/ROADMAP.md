@@ -66,7 +66,7 @@ background" cai — e numa ordem horizontal isso só apareceria com o motor inte
 em cima dela. A Fatia 2 põe texto na tela cedo justamente para resolver isso enquanto o motor
 ainda é pequeno.
 
-### Fatia 1 — Motor de layout no Core, sem UI
+### Fatia 1 — Motor de layout no Core, sem UI ✅
 
 Markup (subconjunto mínimo):
 - [x] AST: `TextStyle` (enum de peso próprio do Core), `InlineRun` (Text, SourceStart, Style),
@@ -76,17 +76,17 @@ Markup (subconjunto mínimo):
 - [x] `MarkupParserTests`: tabela markup → AST esperado
 
 Layout/paginação:
-- [ ] `PageSettings` (A4/Letter + margens, em pontos; `ContentWidthPt`/`ContentHeightPt`;
+- [x] `PageSettings` (A4/Letter + margens, em pontos; `ContentWidthPt`/`ContentHeightPt`;
       `HeaderReservedHeightPt`/`FooterReservedHeightPt` já no tipo, 0 no MVP)
-- [ ] `ITextMeasurer` no Core: `MeasureWidthPt(ReadOnlySpan<char>, TextStyle)` +
+- [x] `ITextMeasurer` no Core: `MeasureWidthPt(ReadOnlySpan<char>, TextStyle)` +
       `GetLineMetrics(TextStyle)` — `Span` para o line breaker medir fatias sem alocar
-- [ ] `LineBreaker` greedy word-wrap sobre a sequência de runs do bloco
-- [ ] `PageBreaker` empilhando linhas até `ContentHeightPt`, respeitando `PageBreakNode`
-- [ ] `LayoutEngine` produzindo `PaginatedDocument` imutável
-- [ ] Model imutável: `LaidOutRun`, `LaidOutLine` (com `SourceStart`/`SourceLength`),
+- [x] `LineBreaker` greedy word-wrap sobre a sequência de runs do bloco
+- [x] `PageBreaker` empilhando linhas até `ContentHeightPt`, respeitando `PageBreakNode`
+- [x] `LayoutEngine` produzindo `PaginatedDocument` imutável
+- [x] Model imutável: `LaidOutRun`, `LaidOutLine` (com `SourceStart`/`SourceLength`),
       `PageLayout`, `PaginatedDocument`
-- [ ] `LineBreakerTests`/`PageBreakerTests` com `FakeTextMeasurer` determinístico
-- [ ] Casos de borda: palavra mais larga que a página, parágrafo vazio, quebra explícita,
+- [x] `LineBreakerTests`/`PageBreakerTests` com `FakeTextMeasurer` determinístico
+- [x] Casos de borda: palavra mais larga que a página, parágrafo vazio, quebra explícita,
       documento vazio produzindo 1 página (não 0)
 
 ### Fatia 2 — Página A4 na tela

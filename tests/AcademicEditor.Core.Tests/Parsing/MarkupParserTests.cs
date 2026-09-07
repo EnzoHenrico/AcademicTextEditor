@@ -110,13 +110,19 @@ public sealed class MarkupParserTests
         Assert.Equal(source, SingleRunText(paragraph));
     }
 
+    // Um heading recém-começado ("## " ainda sem título) precisa manter o estilo do nível, senão
+    // a linha seria medida com a altura do corpo e saltaria de tamanho na primeira letra digitada.
     [Fact]
-    public void Heading_sem_texto_nao_produz_run()
+    public void Heading_sem_texto_mantem_um_run_vazio_com_o_estilo_do_nivel()
     {
-        var document = MarkupParser.Parse("# ");
+        var document = MarkupParser.Parse("## ");
 
         var heading = Assert.IsType<HeadingNode>(Assert.Single(document.Blocks));
-        Assert.Empty(heading.Runs);
+        var run = Assert.Single(heading.Runs);
+
+        Assert.Equal("", run.Text);
+        Assert.Equal(FontWeightKind.Bold, run.Style.Weight);
+        Assert.Equal(3, run.SourceStart);
     }
 
     [Fact]
