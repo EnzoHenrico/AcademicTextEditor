@@ -4,7 +4,7 @@ Padrão do projeto. **Pasta = namespace**, verificado pela guarda de namespaces 
 `dev.sh` (roda no `check` e no `pre-commit`).
 
 ```
-/teste_1
+/AcademicEditor
 ├── AcademicEditor.slnx          # Solução central (formato .slnx do .NET 10)
 ├── Directory.Build.props        # TFM, Nullable, TreatWarningsAsErrors
 ├── .editorconfig  .gitignore
