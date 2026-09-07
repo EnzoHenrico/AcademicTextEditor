@@ -4,8 +4,9 @@ Editor de texto desktop multiplataforma (Windows/Linux/macOS) em C# + Avalonia, 
 para redação de trabalhos acadêmicos (artigos, teses). O autor escreve em Markdown com
 extensões acadêmicas e vê o documento **paginado em tempo real**, como ficará impresso.
 
-Ver `context.md` para o contexto original do produto e `ROADMAP.md` para as fases —
-o roadmap é documento vivo: atualize os checkboxes conforme o trabalho avança.
+Ver `docs/context.md` para o contexto original do produto, `docs/Directories.md` para o
+padrão de diretórios e `docs/ROADMAP.md` para as fases — o roadmap é documento vivo:
+atualize os checkboxes conforme o trabalho avança.
 
 ## Regra permanente: nada é aceito sem build verde
 
@@ -30,9 +31,18 @@ rode `./dev.sh install-hooks` para reinstalar o hook.
 
 ## Arquitetura
 
-- `src/AcademicEditor.Core` — buffer de texto, parser de markup, motor de layout/paginação, I/O.
-- `src/AcademicEditor.App` — Avalonia: renderização, input, janela.
-- `tests/AcademicEditor.Core.Tests` — xUnit, referencia só o Core.
+- `src/AcademicEditor.Core` — `Text/`, `Parsing/`, `Layout/`, `IO/`, `Input/`, `State/`.
+- `src/AcademicEditor.App` — `Views/`, `ViewModels/`, `Controls/`, `Rendering/`, `Input/`, `Assets/`.
+- `tests/AcademicEditor.Core.Tests` — xUnit, espelha as pastas do Core.
+
+Estrutura completa e o raciocínio por trás dela em `docs/Directories.md`. Duas regras dela
+valem repetir aqui, porque são as que costumam ser violadas sem querer:
+
+- **Pasta = namespace.** Verificado pela guarda de namespaces do `dev.sh` (o IDE0130 do
+  Roslyn cobre isso na IDE, mas não sai em build de linha de comando).
+- **Sem pasta `Interfaces/`** — cada contrato mora junto de quem o implementa. E interface
+  só quando ela paga por si: `ITextMeasurer` e `IDocumentStorage` existem para permitir fakes
+  nos testes; um `ITextBuffer` com implementação única não.
 
 **Regra inegociável: `AcademicEditor.Core` nunca referencia `Avalonia.*`.**
 Isso garante testes unitários sem subsistema gráfico e permite reusar o motor de layout

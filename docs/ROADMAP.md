@@ -1,8 +1,9 @@
 # Roadmap — AcademicEditor
 
 Documento vivo: marque os checkboxes conforme avança e mova o status da fase.
-Contexto do produto em [`context.md`](context.md); regras de arquitetura e estilo em
-[`CLAUDE.md`](CLAUDE.md).
+Contexto do produto em [`context.md`](context.md); padrão de diretórios em
+[`Directories.md`](Directories.md); regras de arquitetura e estilo em
+[`CLAUDE.md`](../CLAUDE.md).
 
 **Status:** `✅ concluída` · `🔨 em andamento` · `⬜ planejada`
 
@@ -38,7 +39,22 @@ Commit `55f1ed6`.
 
 ---
 
-## Fase 2 — MVP 🔨
+## Fase 2 — Reestruturação de diretórios ✅
+
+Padrão definido em [`Directories.md`](Directories.md). Feito antes do MVP porque mover pastas
+com o Core vazio é trivial; depois de 40 arquivos de motor, é refatoração cara.
+
+- [x] `docs/` com `context.md`, `ROADMAP.md`, `Directories.md` (`git mv`, histórico preservado)
+- [x] Pastas do Core: `Text/`, `Parsing/Ast/`, `Layout/Model/`, `IO/`, `Input/`, `State/`
+- [x] Pastas do App: `Views/`, `ViewModels/`, `Controls/`, `Rendering/`, `Input/`, `Assets/`
+- [x] `MainWindow` movida para `Views/` (`x:Class`, namespace e `App.axaml.cs` alinhados)
+- [x] `Directories.md` revisado: `Layout/` e `Rendering/` acrescentados, `Interfaces/` descartada
+- [x] Guarda de namespaces no `dev.sh` — pasta = namespace, barrado no `check` e no `pre-commit`
+- [x] Teste negativo: namespace errado falha o gate com mensagem do que corrigir
+
+---
+
+## Fase 3 — MVP 🔨
 
 **Objetivo:** abrir um `.md`, editar, ver a paginação recalcular, salvar, reabrir e obter o
 mesmo conteúdo. É aqui que o diferencial do produto (paginação como layout) fica de pé.
@@ -67,8 +83,7 @@ mesmo conteúdo. É aqui que o diferencial do produto (paginação como layout) 
 - [ ] Casos de borda: palavra mais larga que a página, parágrafo vazio, quebra explícita
 
 ### Renderização e input
-- [ ] Mover `MainWindow.axaml` para `Views/` (o template deixou na raiz do App)
-- [ ] `PageSurface : Control` dentro de `ScrollViewer`; `Render` só desenha
+- [ ] `PageSurface : Control` em `Controls/`, dentro de `ScrollViewer`; `Render` só desenha
 - [ ] `PageRenderer` desenhando páginas com espaçamento visual entre elas
 - [ ] Conversão pt → DIP (`* 96/72`) isolada na camada de renderização
 - [ ] Digitação via evento `TextInput` (não `KeyDown.Key`), por causa de IME e layouts internacionais
@@ -89,11 +104,11 @@ mesmo conteúdo. É aqui que o diferencial do produto (paginação como layout) 
 ### Fechamento da fase
 - [ ] Teste manual end-to-end via `./dev.sh run`
 - [ ] Documento longo (~300 páginas) para medir latência de repaginação e decidir se o
-      reflow incremental precisa ser antecipado da Fase 3
+      reflow incremental precisa ser antecipado da Fase 4
 
 ---
 
-## Fase 3 — Editor de verdade ⬜
+## Fase 4 — Editor de verdade ⬜
 
 - [ ] Reflow incremental (dirty-range em 3 níveis: parser → line-breaker → page-breaker)
 - [ ] Highlighting em tempo real reaproveitando os `InlineRun` do AST (sem motor separado)
@@ -104,9 +119,9 @@ mesmo conteúdo. É aqui que o diferencial do produto (paginação como layout) 
 
 ---
 
-## Fase 4 — Documento acadêmico ⬜
+## Fase 5 — Documento acadêmico ⬜
 
-- [ ] Cabeçalho/rodapé (populando os campos reservados desde a Fase 2)
+- [ ] Cabeçalho/rodapé (populando os campos reservados desde a Fase 3)
 - [ ] Numeração de página
 - [ ] Extensões acadêmicas do markup: notas de rodapé, `[@cite]`, `$math$`, legendas
 - [ ] Notas de rodapé no layout (segundo passe do page-breaker)

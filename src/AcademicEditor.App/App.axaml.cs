@@ -1,3 +1,4 @@
+using AcademicEditor.App.Views;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;

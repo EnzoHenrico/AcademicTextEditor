@@ -387,3 +387,16 @@ dotnet_naming_style.s_camelcase.required_suffix =
 dotnet_naming_style.s_camelcase.word_separator = 
 dotnet_naming_style.s_camelcase.capitalization = camel_case
 
+
+# ---------------------------------------------------------------------------
+# Regras do projeto (ver CLAUDE.md e docs/Directories.md)
+# ---------------------------------------------------------------------------
+
+# O namespace precisa espelhar a pasta (ver docs/Directories.md).
+#
+# Esta regra só é reportada DENTRO da IDE: o IDE0130 não sai em build de linha
+# de comando, mesmo com EnforceCodeStyleInBuild ligado. Quem barra de verdade é
+# a guarda de namespaces do dev.sh, que roda no check e no pre-commit. As duas
+# se complementam: aqui o feedback é imediato ao digitar, lá é obrigatório.
+[*.cs]
+dotnet_diagnostic.IDE0130.severity = error
