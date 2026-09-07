@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AcademicEditor.App/AcademicEditor.App.csproj" />
+    <Project Path="src/AcademicEditor.Core/AcademicEditor.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AcademicEditor.Core.Tests/AcademicEditor.Core.Tests.csproj" />
+  </Folder>
+</Solution>
