@@ -6,12 +6,25 @@ extensões acadêmicas e vê o documento **paginado em tempo real**, como ficar�
 
 Ver `context.md` para o contexto original do produto.
 
+## Regra permanente: nada é aceito sem build verde
+
+**Nenhum desenvolvimento é considerado concluído sem `./dev.sh check` passando** —
+guarda de arquitetura + build sem warnings + testes. Um hook `pre-commit` bloqueia
+commits que violem isso. Se o gate falhar, o trabalho não está pronto: corrija antes
+de reportar conclusão.
+
 ## Comandos
 
+`dev.sh` é local (não versionado, listado em `.git/info/exclude`). Após clonar,
+rode `./dev.sh install-hooks` para reinstalar o hook.
+
 ```bash
-dotnet build AcademicEditor.slnx
-dotnet test tests/AcademicEditor.Core.Tests      # rápido, sem Avalonia
-dotnet run --project src/AcademicEditor.App
+./dev.sh check          # o gate: arquitetura + build + testes
+./dev.sh build          # compila a solução (Debug)
+./dev.sh test           # testes do Core, sem Avalonia
+./dev.sh run            # compila e abre o app
+./dev.sh publish        # executável self-contained em artifacts/linux-x64
+./dev.sh clean
 ```
 
 ## Arquitetura
