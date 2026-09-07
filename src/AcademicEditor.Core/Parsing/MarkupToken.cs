@@ -2,10 +2,10 @@ namespace AcademicEditor.Core.Parsing;
 
 public enum MarkupTokenKind
 {
-    /// <summary>Linha de texto comum. Linhas consecutivas destas formam um parágrafo.</summary>
+    /// <summary>Linha de texto comum. Cada uma vira um bloco próprio.</summary>
     Text,
 
-    /// <summary>Linha vazia ou só com espaços: separador de blocos.</summary>
+    /// <summary>Linha vazia ou só com espaços. Ocupa uma linha na página, como qualquer outra.</summary>
     BlankLine,
 
     /// <summary>Linha iniciada por 1 a 6 <c>#</c> seguidos de espaço.</summary>

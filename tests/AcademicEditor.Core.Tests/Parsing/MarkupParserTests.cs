@@ -26,55 +26,61 @@ public sealed class MarkupParserTests
         Assert.Equal(TextStyle.Body, run.Style);
     }
 
+    // Uma linha da fonte é uma linha na página: o parser não junta linhas consecutivas num
+    // parágrafo só, como faria o CommonMark. Num editor paginado, o autor tem de ver o que digitou
+    // — e a única quebra automática que resta é a da largura da página, que é do LineBreaker.
     [Fact]
-    public void Linha_em_branco_separa_paragrafos()
+    public void Cada_linha_da_fonte_vira_um_bloco()
+    {
+        var document = MarkupParser.Parse("Primeira linha\nsegunda linha");
+
+        Assert.Collection(
+            document.Blocks,
+            block => Assert.Equal("Primeira linha", SingleRunText(block)),
+            block => Assert.Equal("segunda linha", SingleRunText(block)));
+    }
+
+    // A linha em branco não é separador descartável: ela ocupa espaço na folha e é onde o caret
+    // fica depois de um Enter. Sem bloco, não há linha; sem linha, o caret some da tela.
+    [Fact]
+    public void Linha_em_branco_vira_bloco_com_run_vazio_no_offset_dela()
     {
         var document = MarkupParser.Parse("Primeiro.\n\nSegundo.");
 
         Assert.Collection(
             document.Blocks,
             block => Assert.Equal("Primeiro.", SingleRunText(block)),
+            block =>
+            {
+                var run = Assert.Single(block.Runs);
+
+                Assert.Equal("", run.Text);
+
+                // No offset da linha em branco, não em zero: é o que o line breaker usa como
+                // SourceStart da linha, e é o offset onde o caret vai pousar.
+                Assert.Equal(10, run.SourceStart);
+                Assert.Equal(TextStyle.Body, run.Style);
+            },
             block => Assert.Equal("Segundo.", SingleRunText(block)));
     }
 
     [Fact]
-    public void Linhas_em_branco_consecutivas_nao_criam_paragrafo_vazio()
+    public void Linhas_em_branco_consecutivas_viram_um_bloco_cada()
     {
-        var document = MarkupParser.Parse("\n\n\nPrimeiro.\n\n\n\nSegundo.\n\n\n");
+        var document = MarkupParser.Parse("Primeiro.\n\n\nSegundo.");
 
-        Assert.Equal(2, document.Blocks.Count);
-        Assert.All(document.Blocks, block => Assert.NotEmpty(block.Runs));
+        Assert.Equal(4, document.Blocks.Count);
+        Assert.All(document.Blocks, block => Assert.Single(block.Runs));
     }
 
-    // O reflow é a razão de existir do editor: duas linhas seguidas na fonte são um parágrafo
-    // só, e precisam quebrar de novo conforme a largura da página — não ficar presas ao \n.
+    // Uma linha só de espaços mantém os espaços: eles estão no arquivo, e o caret anda por dentro
+    // deles. Apagá-los seria o parser reescrevendo o documento do autor.
     [Fact]
-    public void Linhas_consecutivas_formam_um_paragrafo_com_um_run_por_linha()
+    public void Linha_so_de_espacos_preserva_os_espacos()
     {
-        var document = MarkupParser.Parse("Primeira linha\nsegunda linha");
+        var document = MarkupParser.Parse("a\n   \nb");
 
-        var paragraph = Assert.IsType<ParagraphNode>(Assert.Single(document.Blocks));
-
-        Assert.Collection(
-            paragraph.Runs,
-            run => Assert.Equal("Primeira linha ", run.Text),
-            run => Assert.Equal("segunda linha", run.Text));
-    }
-
-    // O espaço de junção ocupa a posição do '\n', mantendo Text.Length igual ao trecho coberto
-    // na fonte. É essa igualdade que deixa o caret ir da tela de volta ao offset sem tabela extra.
-    [Fact]
-    public void Espaco_de_juncao_ocupa_a_posicao_da_quebra_de_linha()
-    {
-        const string source = "abc\ndef";
-
-        var document = MarkupParser.Parse(source);
-        var runs = Assert.IsType<ParagraphNode>(Assert.Single(document.Blocks)).Runs;
-
-        Assert.Equal(0, runs[0].SourceStart);
-        Assert.Equal(4, runs[0].SourceEnd);
-        Assert.Equal(4, runs[1].SourceStart);
-        Assert.Equal(source.Length, runs[1].SourceEnd);
+        Assert.Equal("   ", SingleRunText(document.Blocks[1]));
     }
 
     [Theory]
@@ -165,15 +171,24 @@ public sealed class MarkupParserTests
         Assert.Collection(
             document.Blocks,
             block => Assert.Equal("Primeiro.", SingleRunText(block)),
-            block => Assert.Equal("Segundo.", SingleRunText(block)));
+            block => Assert.Equal("", SingleRunText(block)),
+            block => Assert.Equal("Segundo.", SingleRunText(block)),
+            block => Assert.Equal("", SingleRunText(block)));
     }
 
+    // Terminar em '\n' significa que existe uma linha depois — vazia, mas existe, e é exatamente
+    // onde o caret está logo após o Enter. Sem este bloco, o caret cai fora de qualquer linha,
+    // Locate devolve altura zero e a barra desaparece até outra tecla trazê-la de volta.
     [Fact]
-    public void Quebra_de_linha_final_nao_cria_bloco_extra()
+    public void Quebra_de_linha_final_cria_a_linha_vazia_onde_o_caret_fica()
     {
-        var document = MarkupParser.Parse("Só um parágrafo.\n");
+        const string source = "Só um parágrafo.\n";
 
-        Assert.Single(document.Blocks);
+        var document = MarkupParser.Parse(source);
+
+        Assert.Equal(2, document.Blocks.Count);
+        Assert.Equal("", SingleRunText(document.Blocks[1]));
+        Assert.Equal(source.Length, Assert.Single(document.Blocks[1].Runs).SourceStart);
     }
 
     // Invariante estrutural do AST: os runs cobrem trechos válidos da fonte, em ordem e sem

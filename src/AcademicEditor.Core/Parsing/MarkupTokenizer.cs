@@ -34,6 +34,14 @@ public static class MarkupTokenizer
             position = next;
         }
 
+        // Fonte terminada em '\n' tem uma última linha, vazia, que o laço acima não vê: ele para
+        // quando a posição alcança o fim. Sem este token, o Enter no fim do documento levaria o
+        // caret para um offset que nenhuma linha cobre — e o caret desaparece da tela.
+        if (source.Length > 0 && source[^1] == '\n')
+        {
+            tokens.Add(new MarkupToken(MarkupTokenKind.BlankLine, source.Length, 0, source.Length, Level: 0));
+        }
+
         return tokens;
     }
 

@@ -10,9 +10,9 @@ namespace AcademicEditor.Core.Parsing.Ast;
 /// highlighting irem da geometria da tela de volta para a posição no texto, sem tabela auxiliar.
 /// </para>
 /// <para>
-/// O único ponto onde <c>Text</c> não é cópia literal da fonte é o espaço de junção que o parser
-/// acrescenta no fim de uma linha soft-wrapped: ele ocupa a posição do <c>\n</c>, mantendo a
-/// invariante de comprimento. Isso pressupõe entrada normalizada em LF — ver <see cref="MarkupParser"/>.
+/// <c>Text</c> é sempre cópia literal do trecho que o run cobre — o parser não inventa nem
+/// suprime caractere nenhum. O que fica de fora dos runs é a marcação: o <c>## </c> de um
+/// heading, o <c>\n</c> entre duas linhas e o <c>\r</c> de uma fonte ainda em CRLF.
 /// </para>
 /// <para>
 /// É struct para não alocar um objeto por trecho: um documento de 300 páginas tem dezenas de

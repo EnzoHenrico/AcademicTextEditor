@@ -2,23 +2,19 @@
 
 public static class Text
 {
-    // Texto fixo até a Fatia 3 trazer o buffer editável. Serve para uma coisa só: provar que o
-    // motor do Core pagina de verdade na tela — reflow das linhas, heading mais alto que o corpo
-    // e quebra explícita produzindo a segunda folha.
+    // Conteúdo inicial até a Fatia 5 trazer abrir arquivo. Cada parágrafo é UMA linha da fonte,
+    // porque é assim que o editor grava o que o autor digita: um \n é uma quebra visível. Quebrar
+    // este texto à mão faria o motor mostrar as linhas curtas, fielmente.
    public const string UniqueFeatures = """
         # Paginação em tempo real
 
-        Este parágrafo existe para mostrar o reflow: ele é uma única linha na fonte e o motor de
-        layout a quebra conforme a largura útil da página, que é a largura do papel menos as
-        margens. Redimensionar a janela não muda nada aqui, porque a quebra acontece em pontos
-        tipográficos sobre a geometria da folha, não sobre o tamanho da tela.
+        Este parágrafo é uma única linha na fonte, e o motor de layout a quebra conforme a largura útil da página — a largura do papel menos as margens. Redimensionar a janela não muda nada aqui, porque a quebra acontece em pontos tipográficos sobre a geometria da folha, não sobre o tamanho da tela.
 
         ## Um título de segundo nível
 
-        Títulos são mais altos que o corpo do texto, então consomem mais da altura útil da página.
-        É por isso que a contagem de páginas depende do estilo de cada bloco, e não apenas da
-        quantidade de caracteres do documento.
+        Títulos são mais altos que o corpo do texto, então consomem mais da altura útil da página. É por isso que a contagem de páginas depende do estilo de cada bloco, e não apenas da quantidade de caracteres do documento.
 
+        A linha em branco acima e a de baixo existem de verdade: têm altura, ocupam espaço na folha e o caret pousa nelas.
 
         \page
 

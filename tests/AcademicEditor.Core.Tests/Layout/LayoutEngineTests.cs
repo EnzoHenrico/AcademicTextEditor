@@ -63,11 +63,32 @@ public sealed class LayoutEngineTests
     [Fact]
     public void Heading_ocupa_mais_altura_que_um_paragrafo()
     {
-        var withHeading = Layout("# T\n\naaa\n\naaa\n\naaa\n\naaa");
-        var withoutHeading = Layout("T\n\naaa\n\naaa\n\naaa\n\naaa");
+        var withHeading = Layout("# T\naaa\naaa\naaa\naaa");
+        var withoutHeading = Layout("T\naaa\naaa\naaa\naaa");
 
         Assert.Equal(2, withHeading.Pages.Count);
         Assert.Single(withoutHeading.Pages);
+    }
+
+    // O Enter na última linha de uma folha cheia abre a folha seguinte, e a linha nova é a
+    // primeira dela — é onde o caret precisa aparecer, e não no rodapé da folha anterior.
+    [Fact]
+    public void Linha_acrescentada_em_pagina_cheia_abre_a_folha_seguinte()
+    {
+        var full = Layout("aaa\naaa\naaa\naaa\naaa");
+        Assert.Single(full.Pages);
+        Assert.Equal(5, full.Pages[0].Lines.Count);
+
+        // Mesmo texto com um '\n' no fim: a linha vazia não cabe mais nesta folha.
+        var afterEnter = Layout("aaa\naaa\naaa\naaa\naaa\n");
+
+        Assert.Equal(2, afterEnter.Pages.Count);
+        Assert.Equal(5, afterEnter.Pages[0].Lines.Count);
+
+        var newLine = Assert.Single(afterEnter.Pages[1].Lines);
+
+        Assert.Equal(0.0, newLine.YPt);
+        Assert.True(newLine.HeightPt > 0.0, "a linha nova tem altura, senão o caret some");
     }
 
     [Fact]

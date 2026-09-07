@@ -44,6 +44,35 @@ public static class PageRenderer
             (pageCount * document.Settings.HeightPt * PtToDip) + ((pageCount + 1) * PageGapDip));
     }
 
+    /// <summary>
+    /// Retângulo do caret em coordenadas da superfície, ou <c>null</c> quando não há onde
+    /// assentá-lo.
+    /// </summary>
+    /// <remarks>
+    /// Público porque a rolagem automática precisa exatamente do retângulo que o desenho usa.
+    /// Recalcular a soma de <see cref="PageGapDip"/>, origem da folha e margem no controle é como
+    /// as duas contas divergem uma da outra depois.
+    /// </remarks>
+    public static Rect? CaretRectDip(PaginatedDocument document, CaretPosition caret, double surfaceWidthDip)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        // Altura zero é o documento sem linha alguma — não há onde assentar o caret.
+        if (caret.HeightPt <= 0.0 || caret.PageIndex < 0 || caret.PageIndex >= document.Pages.Count)
+        {
+            return null;
+        }
+
+        var settings = document.Settings;
+        var origin = PageOrigin(settings, caret.PageIndex, surfaceWidthDip);
+
+        return new Rect(
+            origin.X + ((settings.ContentLeftPt + caret.XPt) * PtToDip),
+            origin.Y + ((settings.ContentTopPt + caret.YPt) * PtToDip),
+            CaretWidthDip,
+            caret.HeightPt * PtToDip);
+    }
+
     public static void Render(
         DrawingContext context,
         PaginatedDocument document,
@@ -54,52 +83,27 @@ public static class PageRenderer
         ArgumentNullException.ThrowIfNull(document);
 
         var settings = document.Settings;
-        var pageHeightDip = settings.HeightPt * PtToDip;
-        var pageWidthDip = settings.WidthPt * PtToDip;
-
-        var left = Math.Max(PageGapDip, (surfaceWidthDip - pageWidthDip) / 2.0);
-        var top = PageGapDip;
-        Point? caretPageOrigin = null;
 
         for (var index = 0; index < document.Pages.Count; index++)
         {
-            var origin = new Point(left, top);
-
-            RenderPage(context, document.Pages[index], settings, origin);
-
-            if (caret is { } position && position.PageIndex == index)
-            {
-                caretPageOrigin = origin;
-            }
-
-            top += pageHeightDip + PageGapDip;
+            RenderPage(context, document.Pages[index], settings, PageOrigin(settings, index, surfaceWidthDip));
         }
 
-        if (caret is { } located && caretPageOrigin is { } pageOrigin)
+        if (caret is { } position && CaretRectDip(document, position, surfaceWidthDip) is { } rect)
         {
-            RenderCaret(context, located, settings, pageOrigin);
+            context.FillRectangle(CaretBrush, rect);
         }
     }
 
-    private static void RenderCaret(
-        DrawingContext context,
-        CaretPosition caret,
-        PageSettings settings,
-        Point pageOrigin)
+    /// <summary>Canto superior esquerdo de uma folha na pilha.</summary>
+    private static Point PageOrigin(PageSettings settings, int pageIndex, double surfaceWidthDip)
     {
-        // Altura zero é o documento sem linha alguma — não há onde assentar o caret.
-        if (caret.HeightPt <= 0.0)
-        {
-            return;
-        }
+        var pageWidthDip = settings.WidthPt * PtToDip;
+        var pageHeightDip = settings.HeightPt * PtToDip;
 
-        context.FillRectangle(
-            CaretBrush,
-            new Rect(
-                pageOrigin.X + ((settings.ContentLeftPt + caret.XPt) * PtToDip),
-                pageOrigin.Y + ((settings.ContentTopPt + caret.YPt) * PtToDip),
-                CaretWidthDip,
-                caret.HeightPt * PtToDip));
+        return new Point(
+            Math.Max(PageGapDip, (surfaceWidthDip - pageWidthDip) / 2.0),
+            PageGapDip + (pageIndex * (pageHeightDip + PageGapDip)));
     }
 
     private static void RenderPage(DrawingContext context, PageLayout page, PageSettings settings, Point origin)

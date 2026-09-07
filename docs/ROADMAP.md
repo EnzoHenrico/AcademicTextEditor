@@ -186,6 +186,73 @@ Registrado desta fatia:
 - **O caret não pisca** e não há rolagem automática até ele. Nenhum dos dois estava na fatia;
   ficam para quando a edição tiver uso real
 
+### Fatia 4.1 — Linha = linha, caret piscando e rolagem ✅
+
+Fatia aberta depois de usar o editor de verdade. Os seis sintomas anotados eram **duas causas**:
+o parser era de Markdown num editor que é WYSIWYG, e o debounce da repaginação matava a
+repetição de tecla.
+
+Semântica de linha — a decisão de fundo:
+
+- [x] **Uma linha da fonte é uma linha na página.** O parser não junta mais linhas consecutivas
+      num parágrafo, como faz o CommonMark: um `\n` é quebra visível e uma linha em branco é uma
+      linha em branco, com altura, posição e um offset onde o caret pousa. A quebra automática
+      que resta é só a da largura da página, do `LineBreaker` — que é a que o produto vende
+- [x] `MarkupTokenizer` emite a linha final vazia quando a fonte termina em `\n`. Sem ela, o
+      Enter no fim do documento levava o caret para um offset que nenhuma linha cobria:
+      `FindLine` devolvia `(-1,-1)`, `Locate` devolvia altura zero e a barra **sumia da tela**
+      até outra tecla trazê-la de volta
+- [x] Some o espaço de junção, e com ele a única ressalva da invariante do `InlineRun`: o texto
+      de um run voltou a ser cópia literal da fonte. `BuildParagraph` encolheu para três linhas
+- [x] Enter uma vez já quebra a linha; Enter no início empurra a linha para baixo e deixa a
+      branca no lugar; ↑↓ pousam na linha em branco preservando a coluna alvo. Os quatro itens
+      caíram juntos, sem tocar em `CaretNavigator` nem em `CaretGeometry`
+- [x] Linha acrescentada no fim de uma folha cheia abre a folha seguinte, com a linha nova em
+      `YPt = 0` e altura própria
+
+Latência da repaginação:
+
+- [x] Teto de latência de 120ms ao lado do debounce de 50ms. A repetição automática do teclado
+      dispara a cada ~33-40ms, **menor que o debounce**: cada tecla cancelava a repaginação
+      pendente antes que ela rodasse, e a tela só atualizava ao soltar a tecla. Medido no harness
+      headless: 30 inserções a cada 35ms davam **0 publicações** durante a rajada; com o teto,
+      **8** em 1060ms — uma a cada ~132ms, como o teto prevê
+- [x] A contagem é desde a última publicação, não desde o pedido: sob repetição a espera encolhe
+      a cada tecla até zerar, publica e recomeça inteira. Digitação normal continua coalescendo
+
+Caret na tela:
+
+- [x] Piscar de 530ms (padrão do Windows; GTK ~600, macOS ~500), sólido enquanto se digita —
+      a publicação de layout reinicia a contagem, então nenhum evento novo foi preciso
+- [x] Temporizador parado ao perder o foco e ao desanexar da árvore visual: em execução ele
+      guarda o delegate, que guarda o `PageSurface`, que guarda a árvore inteira
+- [x] Sem foco não há caret desenhado — barra piscando em janela inativa promete uma tecla que
+      iria para outro lugar
+- [x] Rolagem automática atrás do caret via `RequestBringIntoViewEvent`, postado em prioridade
+      `Loaded`: o `ScrollViewer` só conhece a nova extensão depois do passo de layout, e o caso
+      que importa é justamente o Enter que acabou de criar uma folha
+- [x] `PageRenderer.CaretRectDip` público — a rolagem usa exatamente o retângulo que o desenho
+      usa, em vez de refazer a conta e divergir dele depois
+- [x] Caret nasce no **começo** do documento, não no fim. Era detalhe invisível até a rolagem
+      automática existir; com ela, abrir o app mostraria a última folha
+
+Registrado desta fatia:
+
+- **O custo aceito da decisão:** um `.md` quebrado à mão em 80 colunas por outra ferramenta
+  aparece com linhas curtas, fielmente. É o preço de o autor ver o que digitou, e reunir as
+  linhas de volta é trabalho de importação/exportação, não do editor
+- **Espaçamento entre blocos muda de significado.** Com um `ParagraphNode` por linha de fonte, um
+  `SpaceAfterPt` automático por bloco separaria toda linha de toda linha. O espaço entre
+  parágrafos passa a vir da linha em branco e do preset de norma da Fase 5 — o item continua lá,
+  com outro desenho
+- **Avalonia 12 renomeou o que a fatia precisava:** `OnGotFocus`/`OnLostFocus` recebem
+  `FocusChangedEventArgs`, e não há `Control.BringIntoView(Rect)` — a rolagem se pede levantando
+  `RequestBringIntoViewEvent`
+- **Os cinco testes que quebraram estavam certos ao quebrar.** Todos escreviam `\n\n` para obter
+  duas linhas; agora obtêm três, que é o comportamento novo. Nenhum apontou defeito no código
+- **Terceiro argumento para `tests/AcademicEditor.App.Tests/`**: teto de latência, piscar e
+  rolagem só existem no App e ficaram cobertos por harness manual. Continua na Fase 4
+
 ### Fatia 5 — Undo/redo, arquivo e atalhos
 
 - [ ] `UndoRedoStack` guardando delta estrutural da piece list, não cópias de texto

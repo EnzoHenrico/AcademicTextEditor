@@ -23,10 +23,18 @@ public sealed class EditorViewModel
     // de ~300 páginas (Fatia 6); até lá, este é um chute informado.
     private const int DebounceMilliseconds = 50;
 
+    // Teto de espera. Sem ele, o debounce inanição: a repetição automática do teclado dispara a
+    // cada ~33-40ms, menor que o debounce, então cada tecla cancelava a repaginação pendente
+    // antes que ela rodasse e a tela só atualizava ao soltar a tecla. Com o teto, segurar uma
+    // tecla repagina ~8x/s e a digitação normal continua coalescendo. Mesmo chute informado que
+    // o debounce, e mede junto com ele na Fatia 6.
+    private const int MaxLatencyMilliseconds = 120;
+
     private readonly ITextMeasurer _measurer;
     private readonly EditorDocument _document;
 
     private CancellationTokenSource? _pending;
+    private long _lastPublishedAtMs;
     private int _requestedGeneration;
     private int _publishedGeneration;
     private PageSettings _pageSettings;
@@ -42,7 +50,10 @@ public sealed class EditorViewModel
         _pageSettings = pageSettings;
         _document = new EditorDocument(initialText);
 
-        _caret = new Caret(_document.Length, 0.0);
+        // No começo do documento, não no fim: é onde todo editor põe o caret ao abrir um
+        // arquivo — e, com a rolagem automática, deixá-lo no fim abriria o app na última folha.
+        _caret = new Caret(0, 0.0);
+        _lastPublishedAtMs = Environment.TickCount64;
         Paginated = PaginatedDocument.Empty(pageSettings);
 
         SchedulePagination();
@@ -195,19 +206,28 @@ public sealed class EditorViewModel
         var generation = ++_requestedGeneration;
         var snapshot = _document.CreateSnapshot();
         var settings = _pageSettings;
+        // A espera é contada desde a última publicação, não desde este pedido: sob repetição de
+        // tecla ela encolhe a cada tecla até zerar no teto, publica, e recomeça inteira. O
+        // resultado é uma publicação a cada MaxLatency, sem perder a coalescência no meio.
+        var sincePublish = Environment.TickCount64 - _lastPublishedAtMs;
+        var delay = (int)Math.Clamp(MaxLatencyMilliseconds - sincePublish, 0, DebounceMilliseconds);
 
-        _ = PaginateAsync(snapshot, settings, generation, cancellation.Token);
+        _ = PaginateAsync(snapshot, settings, generation, delay, cancellation.Token);
     }
 
     private async Task PaginateAsync(
         TextBufferSnapshot snapshot,
         PageSettings settings,
         int generation,
+        int delayMilliseconds,
         CancellationToken cancellationToken)
     {
         try
         {
-            await Task.Delay(DebounceMilliseconds, cancellationToken).ConfigureAwait(false);
+            if (delayMilliseconds > 0)
+            {
+                await Task.Delay(delayMilliseconds, cancellationToken).ConfigureAwait(false);
+            }
 
             var paginated = await Task.Run(
                 () => LayoutEngine.Layout(
@@ -235,6 +255,7 @@ public sealed class EditorViewModel
         }
 
         _publishedGeneration = generation;
+        _lastPublishedAtMs = Environment.TickCount64;
         Paginated = paginated;
 
         if (_caretColumnStale)

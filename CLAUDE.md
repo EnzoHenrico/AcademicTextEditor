@@ -66,6 +66,12 @@ num exportador PDF/CLI depois. A única costura Core↔App é a interface `IText
 - **`LaidOutLine` é lista de `LaidOutRun` desde o MVP**, mesmo com o parser emitindo um run
   por bloco. O line breaker já quebra sobre runs heterogêneos — assim `**negrito**` depois é
   trabalho de parser, não cirurgia no coração do motor.
+- **Uma linha da fonte é uma linha na página.** Um `\n` é quebra visível e uma linha em branco
+  é uma linha em branco — com altura, com posição e com um offset onde o caret pousa. O parser
+  não reflui linhas consecutivas num parágrafo, como faria o CommonMark: num editor paginado o
+  autor tem de ver o que digitou. A única quebra automática é a da largura da página, do
+  `LineBreaker`. Custo aceito: um `.md` quebrado à mão por outra ferramenta aparece com linhas
+  curtas — reuni-las é trabalho de importação, não do editor.
 - **Caret e navegação moram no Core** (`State/`), não no `PageSurface`. Mover o caret por
   linha/página exige consultar o `PaginatedDocument`, que é do Core; como função pura
   `(offset, PaginatedDocument) → offset`, isso é testável sem subsistema gráfico.

@@ -59,8 +59,8 @@ public sealed class CaretNavigatorTests
     [Fact]
     public void Coluna_alvo_sobrevive_a_travessia_de_linha_curta()
     {
-        // Três parágrafos: longo, curto, longo. Cada um vira uma linha.
-        var document = Layout("aaaaaaaa\n\nbb\n\ncccccccc");
+        // Três linhas: longa, curta, longa.
+        var document = Layout("aaaaaaaa\nbb\ncccccccc");
 
         var caret = CaretNavigator.At(7, document, Measurer);
         Assert.Equal(70.0, caret.DesiredColumnPt);
@@ -70,7 +70,7 @@ public sealed class CaretNavigatorTests
 
         caret = CaretNavigator.MoveDown(caret, document, Measurer);
 
-        // De volta à coluna 7 da terceira linha, que começa no offset 14.
+        // De volta à coluna 7 da terceira linha, que começa no offset 12.
         Assert.Equal(70.0, CaretGeometry.ColumnPt(LineOf(document, caret.Offset), caret.Offset, Measurer));
     }
 
@@ -95,7 +95,7 @@ public sealed class CaretNavigatorTests
     public void Navegacao_vertical_cruza_a_fronteira_de_pagina()
     {
         // Seis linhas de conteúdo numa página que comporta cinco.
-        var document = Layout(string.Join("\n\n", Enumerable.Repeat("aaaa", 6)));
+        var document = Layout(string.Join("\n", Enumerable.Repeat("aaaa", 6)));
         Assert.Equal(2, document.Pages.Count);
 
         // Última linha da primeira página.
@@ -114,7 +114,7 @@ public sealed class CaretNavigatorTests
     [Fact]
     public void PageDown_e_PageUp_trocam_de_folha()
     {
-        var document = Layout(string.Join("\n\n", Enumerable.Repeat("aaaa", 12)));
+        var document = Layout(string.Join("\n", Enumerable.Repeat("aaaa", 12)));
         Assert.Equal(3, document.Pages.Count);
 
         var caret = CaretNavigator.At(0, document, Measurer);
@@ -146,7 +146,7 @@ public sealed class CaretNavigatorTests
     [Fact]
     public void Caret_pula_a_marcacao_que_nao_e_desenhada()
     {
-        const string Source = "# T\n\nabc";
+        const string Source = "# T\nabc";
         var document = Layout(Source);
 
         // Fim do texto do heading: "T" ocupa o offset 2.
@@ -180,6 +180,45 @@ public sealed class CaretNavigatorTests
         Assert.Equal(caret, CaretNavigator.MoveRight(caret, document, Measurer));
         Assert.Equal(caret, CaretNavigator.MoveDown(caret, document, Measurer));
         Assert.Equal(0, caret.Offset);
+    }
+
+    // A linha em branco é uma parada de verdade na navegação vertical: ela existe na folha, então
+    // pular por cima dela seria o caret ignorando uma linha que o autor está vendo.
+    [Fact]
+    public void Setas_verticais_pousam_na_linha_em_branco()
+    {
+        const string Source = "aaaa\n\nbbbb";
+        var document = Layout(Source);
+
+        var caret = CaretNavigator.At(2, document, Measurer);
+        Assert.Equal(20.0, caret.DesiredColumnPt);
+
+        caret = CaretNavigator.MoveDown(caret, document, Measurer);
+
+        // Offset 5 é a linha em branco. Sem coluna onde pousar, o caret vai para o começo dela.
+        Assert.Equal(5, caret.Offset);
+        Assert.Equal(20.0, caret.DesiredColumnPt);
+
+        // E a coluna alvo sobrevive à travessia: desce para "bbbb" na coluna 2, não na 0.
+        caret = CaretNavigator.MoveDown(caret, document, Measurer);
+        Assert.Equal(8, caret.Offset);
+    }
+
+    // O '\n' não é posição de caret: ele separa duas linhas e a seta o atravessa de uma vez, do
+    // fim de uma para o começo da outra.
+    [Fact]
+    public void Seta_direita_atravessa_a_quebra_de_linha()
+    {
+        var document = Layout("ab\ncd");
+
+        var caret = CaretNavigator.At(2, document, Measurer);
+        caret = CaretNavigator.MoveRight(caret, document, Measurer);
+
+        Assert.Equal(3, caret.Offset);
+
+        caret = CaretNavigator.MoveLeft(caret, document, Measurer);
+
+        Assert.Equal(2, caret.Offset);
     }
 
     private static PaginatedDocument Layout(string source) =>
