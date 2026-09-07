@@ -151,15 +151,40 @@ Registrado desta fatia:
 - **O debounce de 50ms é chute informado**, não medição. O número definitivo sai do documento
   de ~300 páginas da Fatia 6
 
-### Fatia 4 — Caret e navegação (no Core)
+### Fatia 4 — Caret e navegação (no Core) ✅
 
-- [ ] `Caret` em `State/`: `Offset` no buffer + `DesiredColumnPt` (coluna alvo que sobrevive
+- [x] `Caret` em `State/`: `Offset` no buffer + `DesiredColumnPt` (coluna alvo que sobrevive
       a ↑/↓ passando por linhas curtas)
-- [ ] `CaretNavigator` — funções puras `(offset, PaginatedDocument) → offset` para setas,
-      Home/End, PageUp/PageDown, usando `LaidOutLine.SourceStart`/`SourceLength`
-- [ ] `CaretNavigatorTests`: bordas do documento, coluna alvo preservada, Home/End em linha
-      com wrap (limite visual, não do parágrafo), navegação cruzando fronteira de página
-- [ ] Caret desenhado pelo `PageRenderer`; `PageSurface` só traduz tecla em chamada ao Core
+- [x] `CaretGeometry` convertendo nos dois sentidos: offset → coluna (medindo o prefixo do run)
+      e coluna → offset (busca binária, pousando na fronteira mais próxima)
+- [x] `CaretNavigator` — funções puras sobre `(Caret, PaginatedDocument, ITextMeasurer)` para
+      setas, Home/End, PageUp/PageDown, usando `LaidOutLine.SourceStart`/`SourceLength`
+- [x] O caret anda sobre o que está desenhado: ← / → pulam a marcação do heading e a linha em
+      branco entre parágrafos, que a folha não mostra
+- [x] Setas atravessam par substituto de uma vez, e a coluna nunca pousa entre as duas metades
+- [x] `CaretNavigatorTests`/`CaretGeometryTests`: bordas do documento, coluna alvo preservada,
+      Home/End em linha com wrap (limite visual, não do parágrafo), navegação cruzando fronteira
+      de página, ida e volta coluna ↔ offset
+- [x] Documento vazio passa a produzir uma linha vazia — sem ela, apagar todo o texto tirava do
+      caret a altura e a posição, e ele sumia da tela
+- [x] Caret desenhado pelo `PageRenderer` (1 DIP de largura, altura da linha); `PageSurface` só
+      traduz tecla em chamada ao Core
+
+Registrado desta fatia:
+
+- **A navegação recebe o `ITextMeasurer`.** O plano previa função pura de
+  `(offset, PaginatedDocument)`, mas achar a coluna dentro de um run exige medir o prefixo:
+  interpolar poria o caret visivelmente fora do lugar no meio de uma palavra, em fonte
+  proporcional. Continua sem estado e continua testável com o medidor determinístico
+- **A geometria já é exata**, então o item "geometria exata do caret" da Fase 4 fica satisfeito
+  desde aqui
+- **`CaretGeometry.FindLine` é varredura linear** com saída antecipada — custo proporcional ao
+  que existe antes do caret. Um índice achatado torna isso O(log n) e entra quando o profiling
+  da Fatia 6 pedir
+- **Navegar logo após digitar usa o layout anterior por um quadro**, porque o novo ainda está no
+  debounce. A coluna alvo é recalculada quando o layout chega
+- **O caret não pisca** e não há rolagem automática até ele. Nenhum dos dois estava na fatia;
+  ficam para quando a edição tiver uso real
 
 ### Fatia 5 — Undo/redo, arquivo e atalhos
 

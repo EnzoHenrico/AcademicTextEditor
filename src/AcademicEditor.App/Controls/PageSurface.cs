@@ -35,17 +35,17 @@ public sealed class PageSurface : Control
             // manteria este PageSurface — e a árvore visual inteira sob ele — vivo para o GC.
             if (_viewModel is not null)
             {
-                _viewModel.LayoutChanged -= OnLayoutChanged;
+                _viewModel.Invalidated -= OnInvalidated;
             }
 
             _viewModel = value;
 
             if (_viewModel is not null)
             {
-                _viewModel.LayoutChanged += OnLayoutChanged;
+                _viewModel.Invalidated += OnInvalidated;
             }
 
-            OnLayoutChanged(this, EventArgs.Empty);
+            OnInvalidated(this, EventArgs.Empty);
         }
     }
 
@@ -56,7 +56,7 @@ public sealed class PageSurface : Control
             return;
         }
 
-        PageRenderer.Render(context, _viewModel.Paginated, Bounds.Width);
+        PageRenderer.Render(context, _viewModel.Paginated, Bounds.Width, _viewModel.CaretPosition);
     }
 
     // O texto digitado vem daqui, e não de KeyDown.Key. KeyDown entrega a tecla física; este
@@ -107,6 +107,48 @@ public sealed class PageSurface : Control
                 e.Handled = true;
                 break;
 
+            // Navegação: o controle só traduz a tecla numa chamada ao Core. Decidir para onde o
+            // caret vai depende do documento paginado, que é do Core — e é lá que isso é testado.
+            case Key.Left:
+                _viewModel.MoveCaretLeft();
+                e.Handled = true;
+                break;
+
+            case Key.Right:
+                _viewModel.MoveCaretRight();
+                e.Handled = true;
+                break;
+
+            case Key.Up:
+                _viewModel.MoveCaretUp();
+                e.Handled = true;
+                break;
+
+            case Key.Down:
+                _viewModel.MoveCaretDown();
+                e.Handled = true;
+                break;
+
+            case Key.Home:
+                _viewModel.MoveCaretToLineStart();
+                e.Handled = true;
+                break;
+
+            case Key.End:
+                _viewModel.MoveCaretToLineEnd();
+                e.Handled = true;
+                break;
+
+            case Key.PageUp:
+                _viewModel.MoveCaretPageUp();
+                e.Handled = true;
+                break;
+
+            case Key.PageDown:
+                _viewModel.MoveCaretPageDown();
+                e.Handled = true;
+                break;
+
             default:
                 base.OnKeyDown(e);
                 break;
@@ -136,7 +178,7 @@ public sealed class PageSurface : Control
         return PageRenderer.MeasureStack(_viewModel.Paginated);
     }
 
-    private void OnLayoutChanged(object? sender, EventArgs e)
+    private void OnInvalidated(object? sender, EventArgs e)
     {
         InvalidateMeasure();
         InvalidateVisual();

@@ -1,5 +1,6 @@
 using AcademicEditor.Core.Layout;
 using AcademicEditor.Core.Layout.Model;
+using AcademicEditor.Core.State;
 
 using Avalonia;
 using Avalonia.Media;
@@ -23,7 +24,11 @@ public static class PageRenderer
     /// <summary>Espaço em volta e entre as folhas — é o que faz a pilha parecer papel.</summary>
     public const double PageGapDip = 20.0;
 
+    /// <summary>Largura do caret em DIP, não em pontos: um fio de cabelo na tela, sempre.</summary>
+    private const double CaretWidthDip = 1.0;
+
     private static readonly IBrush PageBrush = Brushes.White;
+    private static readonly IBrush CaretBrush = Brushes.Black;
     private static readonly IBrush TextBrush = Brushes.Black;
     private static readonly IPen PageBorderPen = new Pen(new SolidColorBrush(Color.FromRgb(0xC8, 0xC8, 0xC8)), 1.0);
 
@@ -39,7 +44,11 @@ public static class PageRenderer
             (pageCount * document.Settings.HeightPt * PtToDip) + ((pageCount + 1) * PageGapDip));
     }
 
-    public static void Render(DrawingContext context, PaginatedDocument document, double surfaceWidthDip)
+    public static void Render(
+        DrawingContext context,
+        PaginatedDocument document,
+        double surfaceWidthDip,
+        CaretPosition? caret = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(document);
@@ -50,12 +59,47 @@ public static class PageRenderer
 
         var left = Math.Max(PageGapDip, (surfaceWidthDip - pageWidthDip) / 2.0);
         var top = PageGapDip;
+        Point? caretPageOrigin = null;
 
-        foreach (var page in document.Pages)
+        for (var index = 0; index < document.Pages.Count; index++)
         {
-            RenderPage(context, page, settings, new Point(left, top));
+            var origin = new Point(left, top);
+
+            RenderPage(context, document.Pages[index], settings, origin);
+
+            if (caret is { } position && position.PageIndex == index)
+            {
+                caretPageOrigin = origin;
+            }
+
             top += pageHeightDip + PageGapDip;
         }
+
+        if (caret is { } located && caretPageOrigin is { } pageOrigin)
+        {
+            RenderCaret(context, located, settings, pageOrigin);
+        }
+    }
+
+    private static void RenderCaret(
+        DrawingContext context,
+        CaretPosition caret,
+        PageSettings settings,
+        Point pageOrigin)
+    {
+        // Altura zero é o documento sem linha alguma — não há onde assentar o caret.
+        if (caret.HeightPt <= 0.0)
+        {
+            return;
+        }
+
+        context.FillRectangle(
+            CaretBrush,
+            new Rect(
+                pageOrigin.X + ((settings.ContentLeftPt + caret.XPt) * PtToDip),
+                pageOrigin.Y + ((settings.ContentTopPt + caret.YPt) * PtToDip),
+                CaretWidthDip,
+                caret.HeightPt * PtToDip));
     }
 
     private static void RenderPage(DrawingContext context, PageLayout page, PageSettings settings, Point origin)

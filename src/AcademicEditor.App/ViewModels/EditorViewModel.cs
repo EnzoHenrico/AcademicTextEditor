@@ -1,6 +1,7 @@
 using AcademicEditor.Core.Layout;
 using AcademicEditor.Core.Layout.Model;
 using AcademicEditor.Core.Parsing;
+using AcademicEditor.Core.State;
 using AcademicEditor.Core.Text;
 
 using Avalonia.Threading;
@@ -29,6 +30,8 @@ public sealed class EditorViewModel
     private int _requestedGeneration;
     private int _publishedGeneration;
     private PageSettings _pageSettings;
+    private Caret _caret;
+    private bool _caretColumnStale = true;
 
     public EditorViewModel(ITextMeasurer measurer, PageSettings pageSettings, string initialText)
     {
@@ -39,23 +42,29 @@ public sealed class EditorViewModel
         _pageSettings = pageSettings;
         _document = new EditorDocument(initialText);
 
-        InsertionOffset = _document.Length;
+        _caret = new Caret(_document.Length, 0.0);
         Paginated = PaginatedDocument.Empty(pageSettings);
 
         SchedulePagination();
     }
 
-    /// <summary>Disparado na UI thread quando há um novo <see cref="Paginated"/> para desenhar.</summary>
-    public event EventHandler? LayoutChanged;
+    /// <summary>
+    /// Disparado na UI thread quando algo mudou o que se vê: layout novo ou caret movido. Nos
+    /// dois casos a resposta da view é a mesma — redesenhar.
+    /// </summary>
+    public event EventHandler? Invalidated;
 
     /// <summary>Último layout publicado. A troca é de referência: quem está desenhando termina com o antigo, intacto.</summary>
     public PaginatedDocument Paginated { get; private set; }
 
+    /// <summary>Onde o texto digitado entra, e para onde ↑/↓ miram.</summary>
+    public Caret Caret => _caret;
+
     /// <summary>
-    /// Onde o texto digitado entra. Provisório: na Fatia 4 isto vira o <c>Caret</c> do Core, com
-    /// navegação de verdade. Por enquanto é um ponto que só anda para frente conforme se digita.
+    /// Geometria do caret na folha, recalculada quando o caret ou o layout muda — nunca no
+    /// <c>Render</c>, que só desenha.
     /// </summary>
-    public int InsertionOffset { get; private set; }
+    public CaretPosition CaretPosition { get; private set; }
 
     public PageSettings PageSettings
     {
@@ -79,39 +88,81 @@ public sealed class EditorViewModel
             return;
         }
 
-        _document.Insert(InsertionOffset, text);
-        InsertionOffset += text.Length;
+        _document.Insert(_caret.Offset, text);
+        MoveCaretAfterEdit(_caret.Offset + text.Length);
         SchedulePagination();
     }
 
     public void DeleteBackward()
     {
-        if (InsertionOffset == 0)
+        if (_caret.Offset == 0)
         {
             return;
         }
 
         // Um par substituto é um caractere só para quem escreveu, e dois para o buffer. Apagar
         // metade dele deixaria um code unit órfão, que vira losango na tela e lixo no arquivo.
-        var length = IsSurrogatePairEndingAt(InsertionOffset) ? 2 : 1;
+        var length = IsSurrogatePairEndingAt(_caret.Offset) ? 2 : 1;
 
-        _document.Delete(InsertionOffset - length, length);
-        InsertionOffset -= length;
+        _document.Delete(_caret.Offset - length, length);
+        MoveCaretAfterEdit(_caret.Offset - length);
         SchedulePagination();
     }
 
     public void DeleteForward()
     {
-        if (InsertionOffset >= _document.Length)
+        if (_caret.Offset >= _document.Length)
         {
             return;
         }
 
-        var length = IsSurrogatePairStartingAt(InsertionOffset) ? 2 : 1;
+        var length = IsSurrogatePairStartingAt(_caret.Offset) ? 2 : 1;
 
-        _document.Delete(InsertionOffset, length);
+        _document.Delete(_caret.Offset, length);
+        MoveCaretAfterEdit(_caret.Offset);
         SchedulePagination();
     }
+
+    public void MoveCaretLeft() => SetCaret(CaretNavigator.MoveLeft(_caret, Paginated, _measurer));
+
+    public void MoveCaretRight() => SetCaret(CaretNavigator.MoveRight(_caret, Paginated, _measurer));
+
+    public void MoveCaretUp() => SetCaret(CaretNavigator.MoveUp(_caret, Paginated, _measurer));
+
+    public void MoveCaretDown() => SetCaret(CaretNavigator.MoveDown(_caret, Paginated, _measurer));
+
+    public void MoveCaretToLineStart() => SetCaret(CaretNavigator.MoveToLineStart(_caret, Paginated, _measurer));
+
+    public void MoveCaretToLineEnd() => SetCaret(CaretNavigator.MoveToLineEnd(_caret, Paginated, _measurer));
+
+    public void MoveCaretPageUp() => SetCaret(CaretNavigator.MovePageUp(_caret, Paginated, _measurer));
+
+    public void MoveCaretPageDown() => SetCaret(CaretNavigator.MovePageDown(_caret, Paginated, _measurer));
+
+    private void SetCaret(Caret caret)
+    {
+        if (caret == _caret)
+        {
+            return;
+        }
+
+        _caret = caret;
+        _caretColumnStale = false;
+        RefreshCaretPosition();
+        Invalidated?.Invoke(this, EventArgs.Empty);
+    }
+
+    // Depois de uma edição o layout na tela ainda é o de antes, então a coluna alvo calculada
+    // agora descreveria uma geometria que já não existe. Marca para recalcular quando o layout
+    // novo chegar; até lá a barra fica na posição antiga, por um quadro.
+    private void MoveCaretAfterEdit(int offset)
+    {
+        _caret = new Caret(offset, 0.0);
+        _caretColumnStale = true;
+    }
+
+    private void RefreshCaretPosition() =>
+        CaretPosition = CaretGeometry.Locate(_caret.Offset, Paginated, _measurer);
 
     private bool IsSurrogatePairEndingAt(int offset) =>
         offset >= 2
@@ -185,6 +236,14 @@ public sealed class EditorViewModel
 
         _publishedGeneration = generation;
         Paginated = paginated;
-        LayoutChanged?.Invoke(this, EventArgs.Empty);
+
+        if (_caretColumnStale)
+        {
+            _caret = CaretNavigator.At(_caret.Offset, paginated, _measurer);
+            _caretColumnStale = false;
+        }
+
+        RefreshCaretPosition();
+        Invalidated?.Invoke(this, EventArgs.Empty);
     }
 }

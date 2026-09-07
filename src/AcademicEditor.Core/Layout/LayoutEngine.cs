@@ -31,6 +31,19 @@ public static class LayoutEngine
 
         var breaker = new PageBreaker(settings.ContentHeightPt);
 
+        // Documento sem bloco nenhum ainda tem uma linha: é onde o caret fica depois que o autor
+        // apaga tudo. Uma folha sem linha alguma não daria ao caret altura nem posição, e ele
+        // simplesmente sumiria da tela.
+        if (document.Blocks.Count == 0)
+        {
+            foreach (var line in LineBreaker.BreakIntoLines([], settings.ContentWidthPt, measurer))
+            {
+                breaker.AddLine(line);
+            }
+
+            return new PaginatedDocument(breaker.Build(), settings);
+        }
+
         foreach (var block in document.Blocks)
         {
             cancellationToken.ThrowIfCancellationRequested();

@@ -14,12 +14,19 @@ public sealed class LayoutEngineTests
 
     private static readonly FakeTextMeasurer Measurer = new();
 
+    // Uma folha, e uma linha vazia nela. A linha existe para o caret: sem ela, apagar todo o
+    // texto tiraria do caret a altura e a posição, e ele sumiria da tela.
     [Fact]
-    public void Documento_vazio_produz_uma_pagina_em_branco()
+    public void Documento_vazio_produz_uma_pagina_com_uma_linha_vazia()
     {
         var paginated = Layout("");
 
-        Assert.Empty(Assert.Single(paginated.Pages).Lines);
+        var line = Assert.Single(Assert.Single(paginated.Pages).Lines);
+
+        Assert.Empty(line.Runs);
+        Assert.Equal(0, line.SourceStart);
+        Assert.Equal(0, line.SourceLength);
+        Assert.True(line.HeightPt > 0.0, "a linha vazia precisa de altura para o caret caber nela");
     }
 
     [Fact]
