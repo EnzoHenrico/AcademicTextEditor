@@ -89,19 +89,36 @@ Layout/paginação:
 - [x] Casos de borda: palavra mais larga que a página, parágrafo vazio, quebra explícita,
       documento vazio produzindo 1 página (não 0)
 
-### Fatia 2 — Página A4 na tela
+### Fatia 2 — Página A4 na tela ✅
 
-- [ ] **Spike descartável:** medir texto com a API candidata do Avalonia de dentro de um
-      `Task.Run`. Se falhar, o fallback é medir na UI thread atrás de cache e registrar a
-      mudança de decisão no `CLAUDE.md` — não silenciosamente
-- [ ] `AvaloniaTextMeasurer` em `Rendering/` (preferir advances de `GlyphTypeface`, que são
-      dado de fonte e não estado de UI, a `TextLayout`/`FormattedText`)
-- [ ] `PageRenderer` desenhando páginas com espaçamento visual entre elas
-- [ ] Conversão pt → DIP (`* 96/72`) numa constante única do `PageRenderer`
-- [ ] `PageSurface : Control` em `Controls/`, dentro de `ScrollViewer`; `Render` só desenha;
-      `MeasureOverride` devolve a altura total para o scroll funcionar
-- [ ] `EditorViewModel` (MVVM leve, sem framework) guardando o `PaginatedDocument` corrente
-- [ ] Critério: `./dev.sh run` mostra folha A4 com margens e texto fixo já paginado
+- [x] **Spike:** medição do Avalonia dentro de um `Task.Run`. **O risco não se materializou:**
+      `TextLayout`, `FormattedText` e a soma de avanços de glifo funcionam fora da UI thread e
+      devolvem exatamente o mesmo valor que nela, inclusive com 8 threads medindo em paralelo.
+      A decisão "layout roda em background" fica de pé como está
+- [x] `AvaloniaTextMeasurer` em `Rendering/`, medindo com o **mesmo `TextLayout` que desenha**.
+      Avanços de glifo seriam mais baratos (180ms/20k medições e 2,7MB contra 251ms e 50,5MB),
+      mas ignoram o shaping: mediram o mesmo texto 0,76% mais largo que o desenhado, meio
+      caractere de deriva por linha de A4 até vazar a margem. `FormattedText` foi descartado
+      por ser 4,6× mais lento que `TextLayout` sem vantagem nenhuma
+- [x] Altura e baseline dependem só do estilo, nunca do texto — verificado — e ficam num
+      `ConcurrentDictionary` por estilo
+- [x] `PageRenderer` desenhando as folhas com espaçamento visual entre elas
+- [x] Conversão pt → DIP numa constante única do `PageRenderer`
+- [x] `PageSurface : Control` dentro de `ScrollViewer`; `Render` só desenha; `MeasureOverride`
+      devolve a altura total da pilha
+- [x] `EditorViewModel` (MVVM leve, sem framework) guardando o `PaginatedDocument` corrente
+- [x] Critério: `./dev.sh run` mostra folha A4 com margens e texto fixo já paginado
+
+Duas coisas que a fatia expôs e ficam registradas:
+
+- **Falta espaçamento entre blocos.** As linhas saem com o entrelinhamento natural da fonte e
+  nada separa um parágrafo do seguinte, então um heading encosta no corpo. Não é bug do motor:
+  `BlockNode` simplesmente não tem `SpaceBeforePt`/`SpaceAfterPt`, e entrelinhamento de 1,5 é
+  parte do preset de norma da Fase 5. Entra junto com ele
+- **O bug que só o app real pegou:** dentro de um `ScrollViewer` o `availableSize` do
+  `MeasureOverride` chega infinito, e devolvê-lo aborta o passo de layout. Nenhum teste do Core
+  pegaria isso — é o primeiro argumento concreto a favor do `tests/AcademicEditor.App.Tests/`
+  previsto para a Fase 4
 
 ### Fatia 3 — Buffer editável e digitação
 
