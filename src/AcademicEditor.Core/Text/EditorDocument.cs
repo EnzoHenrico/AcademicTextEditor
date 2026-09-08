@@ -32,13 +32,13 @@ public sealed class EditorDocument
 
     public char CharAt(int offset) => _buffer.CharAt(offset);
 
-    /// <summary>Insere <paramref name="text"/> normalizado e devolve quantos caracteres entraram.</summary>
+    /// <summary>Insere <paramref name="text"/> normalizado e devolve o delta estrutural.</summary>
     /// <remarks>
-    /// Devolve o comprimento porque a normalização pode encurtar o texto: colar um trecho CRLF
-    /// insere menos caracteres do que a string tinha. Quem move o caret por <c>text.Length</c>
-    /// depois disso o deixaria adiante do que o buffer realmente recebeu.
+    /// O <see cref="PieceEdit.LengthDelta"/> é quantos caracteres realmente entraram, que não é
+    /// <c>text.Length</c>: a normalização encurta um trecho CRLF colado. Quem mover o caret pelo
+    /// comprimento da string o deixaria adiante do que o buffer recebeu.
     /// </remarks>
-    public int Insert(int offset, string text)
+    public PieceEdit Insert(int offset, string text)
     {
         ArgumentNullException.ThrowIfNull(text);
 
@@ -46,23 +46,38 @@ public sealed class EditorDocument
 
         if (normalized.Length == 0)
         {
-            return 0;
+            return PieceEdit.Empty;
         }
 
-        _buffer.Insert(offset, normalized);
+        var edit = _buffer.Insert(offset, normalized);
         Changed?.Invoke(this, new TextEdit(offset, RemovedLength: 0, normalized));
 
-        return normalized.Length;
+        return edit;
     }
 
-    public void Delete(int offset, int length)
+    public PieceEdit Delete(int offset, int length)
     {
         if (length <= 0)
         {
-            return;
+            return PieceEdit.Empty;
         }
 
-        _buffer.Delete(offset, length);
+        var edit = _buffer.Delete(offset, length);
         Changed?.Invoke(this, new TextEdit(offset, length, string.Empty));
+
+        return edit;
     }
+
+    /// <summary>Desfaz uma edição.</summary>
+    /// <remarks>
+    /// <b>Não dispara <see cref="Changed"/>.</b> O evento carrega um <see cref="TextEdit"/> com o
+    /// texto que entrou, e montá-lo aqui exigiria materializar o trecho restaurado — exatamente a
+    /// cópia que o delta estrutural existe para evitar. Hoje ninguém perde nada com isso: quem
+    /// desenha repagina a partir do snapshot inteiro. Quando o reflow incremental da Fase 4
+    /// chegar, ele vai precisar do trecho, e é aí que a decisão se paga ou se reabre.
+    /// </remarks>
+    public void Revert(PieceEdit edit) => _buffer.Revert(edit);
+
+    /// <summary>Refaz uma edição desfeita. Vale o mesmo aviso do <see cref="Revert"/>.</summary>
+    public void Reapply(PieceEdit edit) => _buffer.Reapply(edit);
 }

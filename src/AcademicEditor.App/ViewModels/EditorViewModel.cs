@@ -32,6 +32,7 @@ public sealed class EditorViewModel
 
     private readonly ITextMeasurer _measurer;
     private readonly EditorDocument _document;
+    private readonly UndoRedoStack _undo;
 
     private CancellationTokenSource? _pending;
     private long _lastPublishedAtMs;
@@ -49,6 +50,7 @@ public sealed class EditorViewModel
         _measurer = measurer;
         _pageSettings = pageSettings;
         _document = new EditorDocument(initialText);
+        _undo = new UndoRedoStack(_document);
 
         // No começo do documento, não no fim: é onde todo editor põe o caret ao abrir um
         // arquivo — e, com a rolagem automática, deixá-lo no fim abriria o app na última folha.
@@ -101,9 +103,20 @@ public sealed class EditorViewModel
 
         // O comprimento vem do documento, não da string: a normalização de fim de linha pode
         // encurtar o texto, e mover o caret por text.Length o deixaria adiante do buffer.
-        var inserted = _document.Insert(_caret.Offset, text);
+        var before = _caret.Offset;
+        var edit = _document.Insert(before, text);
 
-        MoveCaretAfterEdit(_caret.Offset + inserted);
+        if (edit.IsEmpty)
+        {
+            return;
+        }
+
+        // Só um caractere digitado se junta ao anterior no undo. Um Enter ou uma colagem abrem
+        // grupo próprio: desfazer tem de devolver o documento a um estado que o autor reconheça.
+        var kind = text.Length == 1 && text[0] != '\n' ? EditKind.Typing : EditKind.Other;
+
+        _undo.Record(edit, kind, before, before + edit.LengthDelta);
+        MoveCaretAfterEdit(before + edit.LengthDelta);
         SchedulePagination();
     }
 
@@ -117,9 +130,11 @@ public sealed class EditorViewModel
         // Um par substituto é um caractere só para quem escreveu, e dois para o buffer. Apagar
         // metade dele deixaria um code unit órfão, que vira losango na tela e lixo no arquivo.
         var length = IsSurrogatePairEndingAt(_caret.Offset) ? 2 : 1;
+        var before = _caret.Offset;
+        var edit = _document.Delete(before - length, length);
 
-        _document.Delete(_caret.Offset - length, length);
-        MoveCaretAfterEdit(_caret.Offset - length);
+        _undo.Record(edit, EditKind.Deleting, before, before - length);
+        MoveCaretAfterEdit(before - length);
         SchedulePagination();
     }
 
@@ -131,9 +146,11 @@ public sealed class EditorViewModel
         }
 
         var length = IsSurrogatePairStartingAt(_caret.Offset) ? 2 : 1;
+        var before = _caret.Offset;
+        var edit = _document.Delete(before, length);
 
-        _document.Delete(_caret.Offset, length);
-        MoveCaretAfterEdit(_caret.Offset);
+        _undo.Record(edit, EditKind.Deleting, before, before);
+        MoveCaretAfterEdit(before);
         SchedulePagination();
     }
 
@@ -153,12 +170,35 @@ public sealed class EditorViewModel
 
     public void MoveCaretPageDown() => SetCaret(CaretNavigator.MovePageDown(_caret, Paginated, _measurer));
 
+    public bool CanUndo => _undo.CanUndo;
+
+    public bool CanRedo => _undo.CanRedo;
+
+    public void Undo() => Restore(_undo.Undo());
+
+    public void Redo() => Restore(_undo.Redo());
+
+    private void Restore(int? caretOffset)
+    {
+        if (caretOffset is not { } offset)
+        {
+            return;
+        }
+
+        MoveCaretAfterEdit(offset);
+        SchedulePagination();
+    }
+
     private void SetCaret(Caret caret)
     {
         if (caret == _caret)
         {
             return;
         }
+
+        // Mover o caret fecha o grupo de digitação: o que se escrever depois de andar pelo texto é
+        // outra edição, e desfazer não deve juntar as duas.
+        _undo.Break();
 
         _caret = caret;
         _caretColumnStale = false;

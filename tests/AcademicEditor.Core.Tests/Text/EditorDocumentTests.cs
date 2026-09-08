@@ -69,9 +69,9 @@ public sealed class EditorDocumentTests
 
         // Colar duas linhas do Windows: quatro caracteres na string, três no buffer. Quem movesse
         // o caret por text.Length o deixaria um caractere adiante do buffer.
-        var inserted = document.Insert(1, "X\r\nY");
+        var edit = document.Insert(1, "X\r\nY");
 
-        Assert.Equal(3, inserted);
+        Assert.Equal(3, edit.LengthDelta);
         Assert.Equal("aX\nYb", document.CreateSnapshot().GetText());
     }
 

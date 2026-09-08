@@ -52,7 +52,8 @@ public sealed class PieceTable
     /// </summary>
     public int PieceCount => _pieces.Count;
 
-    public void Insert(int offset, string text)
+    /// <summary>Insere e devolve o delta estrutural que desfaz ou refaz a operação.</summary>
+    public PieceEdit Insert(int offset, string text)
     {
         ArgumentNullException.ThrowIfNull(text);
         ArgumentOutOfRangeException.ThrowIfNegative(offset);
@@ -60,7 +61,7 @@ public sealed class PieceTable
 
         if (text.Length == 0)
         {
-            return;
+            return PieceEdit.Empty;
         }
 
         var addedStart = AppendToAddBuffer(text);
@@ -74,35 +75,41 @@ public sealed class PieceTable
 
             if (last.Source == PieceSource.Added && last.Start + last.Length == addedStart)
             {
-                _pieces[^1] = last with { Length = last.Length + text.Length };
+                var grown = last with { Length = last.Length + text.Length };
+
+                _pieces[^1] = grown;
                 Length += text.Length;
-                return;
+
+                return new PieceEdit(_pieces.Count - 1, [last], [grown], text.Length);
             }
         }
 
         var inserted = new Piece(PieceSource.Added, addedStart, text.Length);
         var (index, offsetInPiece) = FindPiece(offset);
 
+        Length += text.Length;
+
         if (offsetInPiece == 0)
         {
             _pieces.Insert(index, inserted);
-        }
-        else
-        {
-            // No meio de uma peça: ela vira prefixo + texto novo + sufixo.
-            var target = _pieces[index];
 
-            _pieces[index] = target with { Length = offsetInPiece };
-            _pieces.InsertRange(index + 1, [
-                inserted,
-                target with { Start = target.Start + offsetInPiece, Length = target.Length - offsetInPiece },
-            ]);
+            // Nenhuma peça saiu do lugar: o trecho de antes era vazio, no mesmo índice.
+            return new PieceEdit(index, [], [inserted], text.Length);
         }
 
-        Length += text.Length;
+        // No meio de uma peça: ela vira prefixo + texto novo + sufixo.
+        var target = _pieces[index];
+        var prefix = target with { Length = offsetInPiece };
+        var suffix = target with { Start = target.Start + offsetInPiece, Length = target.Length - offsetInPiece };
+
+        _pieces[index] = prefix;
+        _pieces.InsertRange(index + 1, [inserted, suffix]);
+
+        return new PieceEdit(index, [target], [prefix, inserted, suffix], text.Length);
     }
 
-    public void Delete(int offset, int length)
+    /// <summary>Apaga e devolve o delta estrutural que desfaz ou refaz a operação.</summary>
+    public PieceEdit Delete(int offset, int length)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(offset);
         ArgumentOutOfRangeException.ThrowIfNegative(length);
@@ -110,12 +117,14 @@ public sealed class PieceTable
 
         if (length == 0)
         {
-            return;
+            return PieceEdit.Empty;
         }
 
         // Apagar nunca toca nos buffers: só encolhe, parte ou remove peças. O texto apagado
-        // continua lá, intacto, que é o que tornará o undo um delta da lista e não uma cópia.
+        // continua lá, intacto, e é o que torna o undo um delta da lista e não uma cópia.
         var (index, offsetInPiece) = FindPiece(offset);
+        var first = index;
+        var before = AffectedPieces(first, offsetInPiece, length);
         var remaining = length;
 
         while (remaining > 0)
@@ -155,6 +164,53 @@ public sealed class PieceTable
         }
 
         Length -= length;
+
+        // O laço adianta o índice a cada peça que sobrevive e não o adianta quando remove, então
+        // ele parou exatamente depois do que restou do trecho afetado.
+        return new PieceEdit(first, before, _pieces.GetRange(first, index - first), -length);
+    }
+
+    /// <summary>Desfaz uma edição: o trecho volta a ser o que era.</summary>
+    public void Revert(PieceEdit edit)
+    {
+        ArgumentNullException.ThrowIfNull(edit);
+
+        _pieces.RemoveRange(edit.Index, edit.After.Count);
+        _pieces.InsertRange(edit.Index, edit.Before);
+        Length -= edit.LengthDelta;
+    }
+
+    /// <summary>Refaz uma edição desfeita. Mesmo movimento do <see cref="Revert"/>, ao contrário.</summary>
+    public void Reapply(PieceEdit edit)
+    {
+        ArgumentNullException.ThrowIfNull(edit);
+
+        _pieces.RemoveRange(edit.Index, edit.Before.Count);
+        _pieces.InsertRange(edit.Index, edit.After);
+        Length += edit.LengthDelta;
+    }
+
+    /// <summary>As peças que um delete de <paramref name="length"/> vai tocar, antes de tocá-las.</summary>
+    private List<Piece> AffectedPieces(int first, int offsetInPiece, int length)
+    {
+        var count = 0;
+        var remaining = length;
+        var available = _pieces[first].Length - offsetInPiece;
+
+        while (true)
+        {
+            remaining -= Math.Min(available, remaining);
+            count++;
+
+            if (remaining == 0)
+            {
+                break;
+            }
+
+            available = _pieces[first + count].Length;
+        }
+
+        return _pieces.GetRange(first, count);
     }
 
     /// <summary>Caractere numa posição. O caret usa isto para não apagar meio par substituto.</summary>
