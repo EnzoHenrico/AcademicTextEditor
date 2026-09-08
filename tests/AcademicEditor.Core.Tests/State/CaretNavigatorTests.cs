@@ -297,6 +297,50 @@ public sealed class CaretNavigatorTests
         Assert.Equal("bbbbbbbbb", TextOf(lines[1]));
     }
 
+    // O bug 2. Depois de End a coluna alvo é a largura cheia da linha, então o movimento vertical
+    // cai exatamente na fronteira da quebra — e sem escolher a afinidade, ↑ resolvia para a linha
+    // de baixo (o caret parecia ir ao começo da mesma linha) e ↓ pulava uma.
+    [Fact]
+    public void Setas_verticais_depois_de_End_chegam_a_linha_vizinha()
+    {
+        // Três linhas visuais de um parágrafo só, todas terminando em quebra por largura.
+        var document = Layout("aaaaa bbbbb ccccc ddddd");
+        var lines = document.Pages[0].Lines;
+
+        Assert.True(lines.Count >= 3, $"esperava 3+ linhas visuais, veio {lines.Count}");
+
+        // End na linha do meio.
+        var caret = CaretNavigator.At(lines[1].SourceStart, document, Measurer);
+        caret = CaretNavigator.MoveToLineEnd(caret, document, Measurer);
+
+        var up = CaretNavigator.MoveUp(caret, document, Measurer);
+        Assert.Equal(0.0, CaretGeometry.Locate(up.Offset, document, Measurer, up.Affinity).YPt);
+
+        var down = CaretNavigator.MoveDown(caret, document, Measurer);
+        Assert.Equal(
+            lines[2].YPt,
+            CaretGeometry.Locate(down.Offset, document, Measurer, down.Affinity).YPt);
+    }
+
+    // Tecla morta parece editor travado: na borda ela leva ao extremo da linha corrente.
+    [Fact]
+    public void Seta_para_cima_na_primeira_linha_vai_para_o_comeco_dela()
+    {
+        var document = Layout("abcdef");
+        var caret = CaretNavigator.At(4, document, Measurer);
+
+        Assert.Equal(0, CaretNavigator.MoveUp(caret, document, Measurer).Offset);
+    }
+
+    [Fact]
+    public void Seta_para_baixo_na_ultima_linha_vai_para_o_fim_dela()
+    {
+        var document = Layout("abcdef");
+        var caret = CaretNavigator.At(2, document, Measurer);
+
+        Assert.Equal(6, CaretNavigator.MoveDown(caret, document, Measurer).Offset);
+    }
+
     private static string TextOf(LaidOutLine line) => string.Concat(line.Runs.Select(run => run.Text));
 
     private static PaginatedDocument LayoutOf(EditorDocument document) =>

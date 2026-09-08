@@ -67,15 +67,16 @@ public static class CaretNavigator
 
         var (previousPage, previousLine) = CaretGeometry.PreviousLine(document, page, line);
 
-        // Upstream: numa quebra por largura este offset é o mesmo de onde o caret saiu, e é a
-        // afinidade que o desenha no fim da linha de cima em vez de deixá-lo parado.
-        return previousPage < 0
-            ? caret
-            : At(
-                document.Pages[previousPage].Lines[previousLine].SourceEnd,
-                document,
-                measurer,
-                CaretAffinity.Upstream);
+        if (previousPage < 0)
+        {
+            return caret;
+        }
+
+        // Numa quebra por largura este offset é o mesmo de onde o caret saiu, e é a afinidade que
+        // o desenha no fim da linha de cima em vez de deixá-lo parado.
+        var end = document.Pages[previousPage].Lines[previousLine].SourceEnd;
+
+        return At(end, document, measurer, AffinityFor(document, previousPage, previousLine, end));
     }
 
     public static Caret MoveRight(Caret caret, PaginatedDocument document, ITextMeasurer measurer)
@@ -125,9 +126,14 @@ public static class CaretNavigator
     {
         var (page, line) = Locate(caret, document);
 
-        return page < 0
-            ? caret
-            : At(document.Pages[page].Lines[line].SourceEnd, document, measurer, CaretAffinity.Upstream);
+        if (page < 0)
+        {
+            return caret;
+        }
+
+        var end = document.Pages[page].Lines[line].SourceEnd;
+
+        return At(end, document, measurer, AffinityFor(document, page, line, end));
     }
 
     public static Caret MovePageUp(Caret caret, PaginatedDocument document, ITextMeasurer measurer) =>
@@ -156,24 +162,52 @@ public static class CaretNavigator
             ? CaretGeometry.PreviousLine(document, page, line)
             : CaretGeometry.NextLine(document, page, line);
 
-        // Sem linha para onde ir: o caret fica onde está, incluindo a coluna alvo. Mandá-lo para
-        // o começo ou o fim do documento seria um salto que ninguém pediu.
+        // Na borda do documento a tecla não pode ficar sem efeito: ↑ na primeira linha vai para o
+        // começo dela, ↓ na última para o fim. É o que o macOS faz, e é melhor que congelar — a
+        // tecla morta parece o editor travado.
         if (targetPage < 0)
         {
-            return caret;
+            return up
+                ? MoveToLineStart(caret, document, measurer)
+                : MoveToLineEnd(caret, document, measurer);
         }
 
         var target = document.Pages[targetPage].Lines[targetLine];
+        var offset = CaretGeometry.OffsetAtColumn(target, caret.DesiredColumnPt, measurer);
 
         // A coluna alvo é preservada, e é isso que faz ↑↓ atravessarem uma linha curta e voltarem
         // à coluna original em vez de grudarem no fim dela. A afinidade, não: ela descreve uma
-        // fronteira da linha de onde o caret saiu, e carregá-la adiante desenharia o caret na
-        // linha errada quando a coluna alvo calhasse de cair numa outra fronteira.
+        // fronteira da linha de onde o caret saiu. Escolhe-se a que resolve para a linha de
+        // destino — do contrário, cair no fim dela (o que End torna provável, porque a coluna alvo
+        // vira a largura cheia) desenharia o caret na linha seguinte, e ↑ pareceria não subir.
         return caret with
         {
-            Offset = CaretGeometry.OffsetAtColumn(target, caret.DesiredColumnPt, measurer),
-            Affinity = CaretAffinity.Downstream,
+            Offset = offset,
+            Affinity = AffinityFor(document, targetPage, targetLine, offset),
         };
+    }
+
+    /// <summary>
+    /// A afinidade que faz <paramref name="offset"/> resolver para esta linha.
+    /// </summary>
+    /// <remarks>
+    /// <c>Upstream</c> só quando ela significa alguma coisa: o offset é o fim desta linha <b>e</b> o
+    /// começo da seguinte, que é o que acontece numa quebra por largura. Reivindicá-la numa linha
+    /// comum não mudaria onde o caret é desenhado, mas deixaria dois carets iguais diferentes para
+    /// o record — e cada tecla viraria um redesenho a mais.
+    /// </remarks>
+    private static CaretAffinity AffinityFor(PaginatedDocument document, int page, int line, int offset)
+    {
+        if (offset != document.Pages[page].Lines[line].SourceEnd)
+        {
+            return CaretAffinity.Downstream;
+        }
+
+        var (nextPage, nextLine) = CaretGeometry.NextLine(document, page, line);
+
+        return nextPage >= 0 && document.Pages[nextPage].Lines[nextLine].SourceStart == offset
+            ? CaretAffinity.Upstream
+            : CaretAffinity.Downstream;
     }
 
     private static Caret MoveToAdjacentPage(
@@ -213,10 +247,12 @@ public static class CaretNavigator
             ? (up ? 0 : lines.Count - 1)
             : Math.Min(line, lines.Count - 1);
 
+        var offset = CaretGeometry.OffsetAtColumn(lines[targetLine], caret.DesiredColumnPt, measurer);
+
         return caret with
         {
-            Offset = CaretGeometry.OffsetAtColumn(lines[targetLine], caret.DesiredColumnPt, measurer),
-            Affinity = CaretAffinity.Downstream,
+            Offset = offset,
+            Affinity = AffinityFor(document, targetPage, targetLine, offset),
         };
     }
 
