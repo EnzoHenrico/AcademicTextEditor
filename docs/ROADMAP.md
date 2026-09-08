@@ -303,18 +303,67 @@ Registrado desta fatia:
   offset com ou sem afinidade — o que mudava era só onde ele era desenhado. Ele guarda a decisão
   de End pousar depois do espaço, não o bug em si
 
-### Fatia 5 — Undo/redo, arquivo e atalhos
+### Fatia 5 — Undo/redo, arquivo e atalhos ✅
 
-- [ ] `UndoRedoStack` guardando delta estrutural da piece list, não cópias de texto
-- [ ] Testes de undo/redo encadeado e de redo invalidado por edição nova
-- [ ] `IDocumentStorage` + `FileDocumentStorage` async
-- [ ] Save atômico: `.tmp` no mesmo diretório (mesmo volume) e `File.Move(..., overwrite: true)`
-- [ ] Detecção de BOM/encoding e normalização CRLF/LF
-- [ ] `FileDocumentStorageTests`: falha no meio da escrita não corrompe o original; round-trip
-- [ ] `CommandId`, `ShortcutScope`, `ChordSequence`, `KeyBindingRegistry` (já suportando N passos)
-- [ ] `ShortcutDispatcher` no `PreviewKeyDown` (tunneling) + `FocusScopeTracker`
-- [ ] Bindings: `Ctrl+S`, `Ctrl+O`, `Ctrl+Z`/`Ctrl+Y`
-- [ ] Diálogos nativos via `IStorageProvider`
+Undo/redo:
+
+- [x] `PieceEdit` — o trecho da lista de peças que virou outro trecho. **Não guarda texto:** apagar
+      no piece table nunca toca nos buffers, então o texto removido continua lá e as peças antigas
+      ainda apontam para ele. Colar dez páginas e desfazer custa uma emenda na lista
+- [x] `Revert` e `Reapply` são o mesmo movimento com `Before` e `After` trocados — não há um
+      segundo caminho de código para manter correto
+- [x] `UndoRedoStack` agrupando: cada tecla é uma edição no buffer, mas desfazer letra por letra é
+      insuportável. Teclas seguidas que continuam de onde a anterior parou entram no mesmo grupo
+- [x] Mover o caret, Enter, colar ou trocar de tipo de edição abrem grupo novo. O `Break` acontece
+      na **intenção** de mover, não no movimento efetivo: logo após digitar o layout ainda está no
+      debounce e a seta não acha para onde ir — o agrupamento não pode depender disso
+- [x] Edição nova invalida o redo: aquela história descreve peças que não existem mais na lista
+- [x] Stress diferencial de 3 sementes × 2.000 operações aleatórias, intercalando edição, undo e
+      redo contra um modelo ingênuo de string. É o que prova o delta estrutural: a correção depende
+      de undo/redo serem estritamente LIFO, que é o que mantém válido o índice de peça de cada delta
+
+Arquivo:
+
+- [x] `IDocumentStorage` + `FileDocumentStorage` async
+- [x] **Save atômico**: escreve num temporário e move por cima. Um `WriteAllText` direto trunca o
+      arquivo antes de escrever — morrer no meio deixa o original pela metade, e ele já não existe
+      para recuperar. O temporário fica no mesmo diretório porque mover só é atômico no mesmo volume
+- [x] Detecção de BOM (UTF-8, UTF-16 LE/BE) e gravação na mesma codificação. Sem BOM é UTF-8, que é
+      o padrão da web, do git e de todo `.md` — adivinhar por estatística erra em texto curto e
+      erra calado
+- [x] Normalização CRLF/LF: já feita na Fatia 4.2, na entrada do `EditorDocument`
+- [x] `FileDocumentStorageTests`: round-trip nas quatro codificações, falha no meio da escrita não
+      corrompe o original, nem deixa temporário para trás
+- [x] Abrir troca documento **e** histórico: os deltas do anterior descrevem outra lista de peças
+
+Atalhos:
+
+- [x] `KeyCode`/`ModifierKeys` próprios do Core — ele não referencia Avalonia. Os nomes são iguais
+      aos do `Avalonia.Input.Key` de propósito: a tradução vira um mapa por nome, montado uma vez
+- [x] `CommandId`, `ShortcutScope`, `ChordSequence`, `KeyBindingRegistry` com N passos desde já —
+      um atalho de dois passos exige estado entre teclas, e acrescentar isso depois seria reescrever
+      o laço de teclado, não acrescentar um caso
+- [x] `ShortcutDispatcher` no **tunelamento**, não no borbulhamento: é o que faz `Ctrl+S` salvar em
+      vez de virar texto. No borbulhamento o `PageSurface` já teria tratado a tecla
+- [x] `FocusScopeTracker` — hoje quase vacuoso com um painel só, existe pela seam
+- [x] Bindings: `Ctrl+S`, `Ctrl+Shift+S`, `Ctrl+O`, `Ctrl+Z`, `Ctrl+Y` e `Ctrl+Shift+Z`. Os dois
+      últimos apontam para o mesmo `CommandId`, que é a razão de o atalho não apontar para o método
+- [x] Diálogos nativos via `IStorageProvider`; título da janela mostra arquivo, "não salvo" e a
+      última mensagem — um save que falha é a falha que mais importa, e sem isso sumiria numa Task
+
+Registrado desta fatia:
+
+- **O bug que só o pipeline real pegou:** o enum `Key` do Avalonia tem apelidos (`Prior` e `PageUp`
+  são o mesmo valor, e `ToString()` devolve o nome canônico para os dois), então o mapa por nome
+  lançava na primeira tecla traduzida. Nenhum teste do Core alcançaria isso
+- **`Revert`/`Reapply` não disparam `Changed`.** O evento carrega o texto que entrou, e montá-lo
+  exigiria materializar o trecho restaurado — a cópia que o delta existe para evitar. Ninguém perde
+  nada hoje; a decisão se paga ou se reabre no reflow incremental da Fase 4
+- **`IsModified` não volta a falso ao desfazer até o estado gravado.** Para isso o histórico teria
+  de marcar onde o save aconteceu. A conta erra a favor da segurança: no máximo grava um arquivo
+  idêntico ao que já estava lá
+- **Não há aviso de documento não salvo ao fechar a janela.** Fica para quando houver mais de um
+  documento aberto
 
 ### Fatia 6 — Fechamento da fase
 - [ ] Teste manual end-to-end via `./dev.sh run`

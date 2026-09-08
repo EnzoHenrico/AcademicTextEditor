@@ -1,3 +1,4 @@
+using AcademicEditor.Core.IO;
 using AcademicEditor.Core.Layout;
 using AcademicEditor.Core.Layout.Model;
 using AcademicEditor.Core.Parsing;
@@ -31,8 +32,10 @@ public sealed class EditorViewModel
     private const int MaxLatencyMilliseconds = 120;
 
     private readonly ITextMeasurer _measurer;
-    private readonly EditorDocument _document;
-    private readonly UndoRedoStack _undo;
+    private readonly IDocumentStorage _storage;
+
+    private EditorDocument _document;
+    private UndoRedoStack _undo;
 
     private CancellationTokenSource? _pending;
     private long _lastPublishedAtMs;
@@ -41,13 +44,19 @@ public sealed class EditorViewModel
     private PageSettings _pageSettings;
     private Caret _caret;
     private bool _caretColumnStale = true;
+    private DocumentEncoding _encoding = DocumentEncoding.Utf8;
 
-    public EditorViewModel(ITextMeasurer measurer, PageSettings pageSettings, string initialText)
+    public EditorViewModel(
+        ITextMeasurer measurer,
+        PageSettings pageSettings,
+        string initialText,
+        IDocumentStorage? storage = null)
     {
         ArgumentNullException.ThrowIfNull(measurer);
         ArgumentNullException.ThrowIfNull(initialText);
 
         _measurer = measurer;
+        _storage = storage ?? new FileDocumentStorage();
         _pageSettings = pageSettings;
         _document = new EditorDocument(initialText);
         _undo = new UndoRedoStack(_document);
@@ -67,6 +76,13 @@ public sealed class EditorViewModel
     /// </summary>
     public event EventHandler? Invalidated;
 
+    /// <summary>
+    /// Mudou o arquivo, o "salvo/não salvo" ou a última mensagem. Separado do
+    /// <see cref="Invalidated"/> porque aquele dispara a cada publicação de layout — várias vezes
+    /// por segundo enquanto se digita — e remontar o título da janela nesse ritmo é desperdício.
+    /// </summary>
+    public event EventHandler? DocumentStateChanged;
+
     /// <summary>Último layout publicado. A troca é de referência: quem está desenhando termina com o antigo, intacto.</summary>
     public PaginatedDocument Paginated { get; private set; }
 
@@ -78,6 +94,20 @@ public sealed class EditorViewModel
     /// <c>Render</c>, que só desenha.
     /// </summary>
     public CaretPosition CaretPosition { get; private set; }
+
+    /// <summary>Caminho do arquivo aberto, ou <c>null</c> num documento que nunca foi salvo.</summary>
+    public string? FilePath { get; private set; }
+
+    /// <summary>Há edição não gravada.</summary>
+    /// <remarks>
+    /// Marca em qualquer edição e só limpa ao salvar ou abrir. Desfazer até o estado gravado não
+    /// limpa — para isso o histórico teria de guardar em que ponto o save aconteceu, e a conta
+    /// erra a favor da segurança: no máximo se grava um arquivo idêntico ao que estava lá.
+    /// </remarks>
+    public bool IsModified { get; private set; }
+
+    /// <summary>O que dizer a quem está escrevendo. A janela mostra isto no título.</summary>
+    public string StatusMessage { get; private set; } = string.Empty;
 
     public PageSettings PageSettings
     {
@@ -117,6 +147,7 @@ public sealed class EditorViewModel
 
         _undo.Record(edit, kind, before, before + edit.LengthDelta);
         MoveCaretAfterEdit(before + edit.LengthDelta);
+        MarkModified();
         SchedulePagination();
     }
 
@@ -135,6 +166,7 @@ public sealed class EditorViewModel
 
         _undo.Record(edit, EditKind.Deleting, before, before - length);
         MoveCaretAfterEdit(before - length);
+        MarkModified();
         SchedulePagination();
     }
 
@@ -151,24 +183,25 @@ public sealed class EditorViewModel
 
         _undo.Record(edit, EditKind.Deleting, before, before);
         MoveCaretAfterEdit(before);
+        MarkModified();
         SchedulePagination();
     }
 
-    public void MoveCaretLeft() => SetCaret(CaretNavigator.MoveLeft(_caret, Paginated, _measurer));
+    public void MoveCaretLeft() => Navigate(CaretNavigator.MoveLeft(_caret, Paginated, _measurer));
 
-    public void MoveCaretRight() => SetCaret(CaretNavigator.MoveRight(_caret, Paginated, _measurer));
+    public void MoveCaretRight() => Navigate(CaretNavigator.MoveRight(_caret, Paginated, _measurer));
 
-    public void MoveCaretUp() => SetCaret(CaretNavigator.MoveUp(_caret, Paginated, _measurer));
+    public void MoveCaretUp() => Navigate(CaretNavigator.MoveUp(_caret, Paginated, _measurer));
 
-    public void MoveCaretDown() => SetCaret(CaretNavigator.MoveDown(_caret, Paginated, _measurer));
+    public void MoveCaretDown() => Navigate(CaretNavigator.MoveDown(_caret, Paginated, _measurer));
 
-    public void MoveCaretToLineStart() => SetCaret(CaretNavigator.MoveToLineStart(_caret, Paginated, _measurer));
+    public void MoveCaretToLineStart() => Navigate(CaretNavigator.MoveToLineStart(_caret, Paginated, _measurer));
 
-    public void MoveCaretToLineEnd() => SetCaret(CaretNavigator.MoveToLineEnd(_caret, Paginated, _measurer));
+    public void MoveCaretToLineEnd() => Navigate(CaretNavigator.MoveToLineEnd(_caret, Paginated, _measurer));
 
-    public void MoveCaretPageUp() => SetCaret(CaretNavigator.MovePageUp(_caret, Paginated, _measurer));
+    public void MoveCaretPageUp() => Navigate(CaretNavigator.MovePageUp(_caret, Paginated, _measurer));
 
-    public void MoveCaretPageDown() => SetCaret(CaretNavigator.MovePageDown(_caret, Paginated, _measurer));
+    public void MoveCaretPageDown() => Navigate(CaretNavigator.MovePageDown(_caret, Paginated, _measurer));
 
     public bool CanUndo => _undo.CanUndo;
 
@@ -186,7 +219,21 @@ public sealed class EditorViewModel
         }
 
         MoveCaretAfterEdit(offset);
+        MarkModified();
         SchedulePagination();
+    }
+
+    /// <summary>Move o caret por ordem de quem está escrevendo.</summary>
+    /// <remarks>
+    /// Fecha o grupo de digitação <b>antes</b> de olhar se o caret saiu do lugar: o que se escreve
+    /// depois de andar pelo texto é outra edição. Fechar só quando o caret efetivamente anda
+    /// deixaria o agrupamento dependente do layout estar fresco — logo após uma tecla ele ainda
+    /// está no debounce, e a seta não acha para onde ir.
+    /// </remarks>
+    private void Navigate(Caret caret)
+    {
+        _undo.Break();
+        SetCaret(caret);
     }
 
     private void SetCaret(Caret caret)
@@ -195,10 +242,6 @@ public sealed class EditorViewModel
         {
             return;
         }
-
-        // Mover o caret fecha o grupo de digitação: o que se escrever depois de andar pelo texto é
-        // outra edição, e desfazer não deve juntar as duas.
-        _undo.Break();
 
         _caret = caret;
         _caretColumnStale = false;
@@ -213,6 +256,64 @@ public sealed class EditorViewModel
     {
         _caret = new Caret(offset, 0.0);
         _caretColumnStale = true;
+    }
+
+    /// <summary>Grava no arquivo aberto. Chame <see cref="SaveAsAsync"/> quando não houver um.</summary>
+    public Task SaveAsync() =>
+        FilePath is { } path ? SaveAsAsync(path) : Task.CompletedTask;
+
+    public async Task SaveAsAsync(string path)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+
+        // O snapshot é tirado aqui, na UI thread: gravar o que estava escrito quando o autor pediu
+        // para gravar, mesmo que ele continue digitando enquanto o disco responde.
+        var text = _document.CreateSnapshot().GetText();
+
+        await _storage.SaveAsync(path, text, _encoding).ConfigureAwait(true);
+
+        FilePath = path;
+        IsModified = false;
+        _undo.Break();
+        Report($"salvo em {Path.GetFileName(path)}");
+    }
+
+    public async Task OpenAsync(string path)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+
+        var loaded = await _storage.LoadAsync(path).ConfigureAwait(true);
+
+        // Documento novo, histórico novo: os deltas do anterior descrevem peças de outra lista, e
+        // desfazer por cima deles corromperia o buffer.
+        _document = new EditorDocument(loaded.Text);
+        _undo = new UndoRedoStack(_document);
+        _encoding = loaded.Encoding;
+
+        FilePath = path;
+        IsModified = false;
+        _caret = new Caret(0, 0.0);
+        _caretColumnStale = true;
+
+        Report($"aberto {Path.GetFileName(path)}");
+        SchedulePagination();
+    }
+
+    private void MarkModified()
+    {
+        if (IsModified)
+        {
+            return;
+        }
+
+        IsModified = true;
+        DocumentStateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void Report(string message)
+    {
+        StatusMessage = message;
+        DocumentStateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void RefreshCaretPosition() =>
