@@ -1,6 +1,7 @@
 using AcademicEditor.Core.Layout;
 using AcademicEditor.Core.Layout.Model;
 using AcademicEditor.Core.Parsing;
+using AcademicEditor.Core.Text;
 using AcademicEditor.Core.State;
 using AcademicEditor.Core.Tests.Layout;
 
@@ -220,6 +221,86 @@ public sealed class CaretNavigatorTests
 
         Assert.Equal(2, caret.Offset);
     }
+
+    // O bug que abriu a Fatia 4.2. "aaaaa bbbbbbbbb" quebra em "aaaaa " / "bbbbbbbbb": o espaço
+    // fica com a linha de cima, então o fim dela e o começo da de baixo são o mesmo offset 6.
+    // Sem afinidade, End resolvia para a linha de baixo e o caret saltava para lá.
+    [Fact]
+    public void End_numa_linha_quebrada_fica_na_linha_dela()
+    {
+        var document = Layout("aaaaa bbbbbbbbb");
+        var caret = CaretNavigator.MoveToLineEnd(CaretNavigator.At(2, document, Measurer), document, Measurer);
+
+        Assert.Equal(6, caret.Offset);
+        Assert.Equal(CaretAffinity.Upstream, caret.Affinity);
+
+        // Linha 0, não linha 1 — e na coluna do fim dela, não na coluna zero.
+        var position = CaretGeometry.Locate(caret.Offset, document, Measurer, caret.Affinity);
+
+        Assert.Equal(0.0, position.YPt);
+        Assert.Equal(60.0, caret.DesiredColumnPt);
+    }
+
+    // Uma tecla, um movimento visível. Antes, ← no começo de uma linha quebrada devolvia o mesmo
+    // offset com a mesma afinidade: o caret ficava parado e a tecla parecia morta.
+    [Fact]
+    public void Setas_atravessam_a_fronteira_da_quebra_por_largura()
+    {
+        var document = Layout("aaaaa bbbbbbbbb");
+        var start = CaretNavigator.At(6, document, Measurer);
+
+        Assert.Equal(CaretAffinity.Downstream, start.Affinity);
+        Assert.Equal(20.0, CaretGeometry.Locate(6, document, Measurer, start.Affinity).YPt);
+
+        var left = CaretNavigator.MoveLeft(start, document, Measurer);
+
+        // Mesmo offset, outra linha: é a afinidade que faz a diferença ser visível.
+        Assert.Equal(6, left.Offset);
+        Assert.Equal(CaretAffinity.Upstream, left.Affinity);
+        Assert.Equal(0.0, CaretGeometry.Locate(left.Offset, document, Measurer, left.Affinity).YPt);
+        Assert.NotEqual(start, left);
+
+        var back = CaretNavigator.MoveRight(left, document, Measurer);
+
+        Assert.Equal(start, back);
+    }
+
+    // A afinidade descreve uma fronteira da linha de origem. Levá-la adiante desenharia o caret na
+    // linha errada quando a coluna alvo calhasse de cair numa outra fronteira.
+    [Fact]
+    public void Movimento_vertical_nao_carrega_a_afinidade()
+    {
+        var document = Layout("aaaaa bbbbbbbbb");
+        var caret = CaretNavigator.MoveToLineEnd(CaretNavigator.At(2, document, Measurer), document, Measurer);
+
+        Assert.Equal(CaretAffinity.Upstream, caret.Affinity);
+        Assert.Equal(CaretAffinity.Downstream, CaretNavigator.MoveDown(caret, document, Measurer).Affinity);
+    }
+
+    // O outro sintoma da Fatia 4.2: quebrar a linha no fim dela punha um espaço no começo da linha
+    // de baixo. End pousa DEPOIS do espaço em que a linha quebrou, então o \n entra depois dele e
+    // o espaço fica em cima, onde é invisível.
+    [Fact]
+    public void Enter_no_fim_de_uma_linha_quebrada_deixa_o_espaco_em_cima()
+    {
+        var document = new EditorDocument("aaaaa bbbbbbbbb");
+        var caret = CaretNavigator.MoveToLineEnd(
+            CaretNavigator.At(2, LayoutOf(document), Measurer),
+            LayoutOf(document),
+            Measurer);
+
+        document.Insert(caret.Offset, "\n");
+
+        var lines = LayoutOf(document).Pages.SelectMany(page => page.Lines).ToArray();
+
+        Assert.Equal("aaaaa ", TextOf(lines[0]));
+        Assert.Equal("bbbbbbbbb", TextOf(lines[1]));
+    }
+
+    private static string TextOf(LaidOutLine line) => string.Concat(line.Runs.Select(run => run.Text));
+
+    private static PaginatedDocument LayoutOf(EditorDocument document) =>
+        Layout(document.CreateSnapshot().GetText());
 
     private static PaginatedDocument Layout(string source) =>
         LayoutEngine.Layout(MarkupParser.Parse(source), Settings, Measurer);

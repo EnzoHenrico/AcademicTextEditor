@@ -1,6 +1,7 @@
 using AcademicEditor.Core.Layout;
 using AcademicEditor.Core.Layout.Model;
 using AcademicEditor.Core.Parsing;
+using AcademicEditor.Core.Text;
 
 namespace AcademicEditor.Core.Tests.Layout;
 
@@ -91,6 +92,28 @@ public sealed class LayoutEngineTests
         Assert.True(newLine.HeightPt > 0.0, "a linha nova tem altura, senão o caret some");
     }
 
+    // A garantia que os dois mocks do App pedem, no lugar onde ela pode ser verificada: o Core não
+    // referencia o App, então o teste traz a sua própria fonte. Se a normalização sumir, o CRLF
+    // volta a abrir um vão de dois caracteres entre linhas e os SourceStart divergem.
+    [Fact]
+    public void Crlf_e_lf_produzem_a_mesma_paginacao()
+    {
+        const string Lf = "# Título\n\nUm parágrafo que é uma linha só e precisa quebrar.\n\nOutro.";
+
+        var fromLf = LayoutOf(new EditorDocument(Lf));
+        var fromCrLf = LayoutOf(new EditorDocument(Lf.Replace("\n", "\r\n")));
+
+        Assert.Equal(fromLf.Pages.Count, fromCrLf.Pages.Count);
+
+        var linesFromLf = fromLf.Pages.SelectMany(page => page.Lines).ToArray();
+        var linesFromCrLf = fromCrLf.Pages.SelectMany(page => page.Lines).ToArray();
+
+        Assert.Equal(linesFromLf.Length, linesFromCrLf.Length);
+        Assert.Equal(
+            linesFromLf.Select(line => (line.SourceStart, line.SourceLength)),
+            linesFromCrLf.Select(line => (line.SourceStart, line.SourceLength)));
+    }
+
     [Fact]
     public void Area_de_conteudo_nao_positiva_e_erro_de_programacao()
     {
@@ -99,6 +122,9 @@ public sealed class LayoutEngineTests
         Assert.Throws<ArgumentOutOfRangeException>(
             () => LayoutEngine.Layout(MarkupParser.Parse("texto"), impossible, Measurer));
     }
+
+    private static PaginatedDocument LayoutOf(EditorDocument document) =>
+        Layout(document.CreateSnapshot().GetText());
 
     private static PaginatedDocument Layout(string source) =>
         LayoutEngine.Layout(MarkupParser.Parse(source), Settings, Measurer);

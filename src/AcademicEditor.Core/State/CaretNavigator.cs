@@ -15,6 +15,12 @@ namespace AcademicEditor.Core.State;
 /// controle, exigiria subsistema gráfico.
 /// </para>
 /// <para>
+/// <b>A fronteira de uma quebra por largura é uma posição, não duas.</b> O espaço em que a linha
+/// quebrou fica com a linha de cima, então o fim dela e o começo da seguinte são o mesmo offset.
+/// Cada movimento diz de que lado quer parar (<see cref="CaretAffinity"/>) — sem isso End cairia
+/// na linha de baixo e ← no começo de uma linha quebrada não moveria nada visível.
+/// </para>
+/// <para>
 /// <b>O caret anda sobre o que está desenhado.</b> As posições válidas são a união dos trechos
 /// que as linhas cobrem — a marcação de um heading e a linha em branco entre parágrafos ficam de
 /// fora, e ← / → passam por cima delas. Uma tecla que não movesse nada visível seria uma tecla
@@ -24,16 +30,23 @@ namespace AcademicEditor.Core.State;
 public static class CaretNavigator
 {
     /// <summary>Caret num offset, com a coluna alvo recalculada. Use após uma edição.</summary>
-    public static Caret At(int offset, PaginatedDocument document, ITextMeasurer measurer)
+    public static Caret At(
+        int offset,
+        PaginatedDocument document,
+        ITextMeasurer measurer,
+        CaretAffinity affinity = CaretAffinity.Downstream)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(measurer);
 
-        var (page, line) = CaretGeometry.FindLine(offset, document);
+        var (page, line) = CaretGeometry.FindLine(offset, document, affinity);
 
         return page < 0
-            ? new Caret(offset, 0.0)
-            : new Caret(offset, CaretGeometry.ColumnPt(document.Pages[page].Lines[line], offset, measurer));
+            ? new Caret(offset, 0.0, affinity)
+            : new Caret(
+                offset,
+                CaretGeometry.ColumnPt(document.Pages[page].Lines[line], offset, measurer),
+                affinity);
     }
 
     public static Caret MoveLeft(Caret caret, PaginatedDocument document, ITextMeasurer measurer)
@@ -54,9 +67,15 @@ public static class CaretNavigator
 
         var (previousPage, previousLine) = CaretGeometry.PreviousLine(document, page, line);
 
+        // Upstream: numa quebra por largura este offset é o mesmo de onde o caret saiu, e é a
+        // afinidade que o desenha no fim da linha de cima em vez de deixá-lo parado.
         return previousPage < 0
             ? caret
-            : At(document.Pages[previousPage].Lines[previousLine].SourceEnd, document, measurer);
+            : At(
+                document.Pages[previousPage].Lines[previousLine].SourceEnd,
+                document,
+                measurer,
+                CaretAffinity.Upstream);
     }
 
     public static Caret MoveRight(Caret caret, PaginatedDocument document, ITextMeasurer measurer)
@@ -97,11 +116,18 @@ public static class CaretNavigator
     }
 
     /// <summary>End: fim da linha visual. Num parágrafo com wrap, para no limite da quebra.</summary>
+    /// <remarks>
+    /// Pousa <b>depois</b> do espaço em que a linha quebrou, e é a afinidade que o mantém desenhado
+    /// nesta linha. Ficar antes do espaço parece igual na tela — o espaço é invisível no fim da
+    /// linha — mas um Enter ali empurraria o espaço para a linha de baixo, que nasceria indentada.
+    /// </remarks>
     public static Caret MoveToLineEnd(Caret caret, PaginatedDocument document, ITextMeasurer measurer)
     {
         var (page, line) = Locate(caret, document);
 
-        return page < 0 ? caret : At(document.Pages[page].Lines[line].SourceEnd, document, measurer);
+        return page < 0
+            ? caret
+            : At(document.Pages[page].Lines[line].SourceEnd, document, measurer, CaretAffinity.Upstream);
     }
 
     public static Caret MovePageUp(Caret caret, PaginatedDocument document, ITextMeasurer measurer) =>
@@ -140,8 +166,14 @@ public static class CaretNavigator
         var target = document.Pages[targetPage].Lines[targetLine];
 
         // A coluna alvo é preservada, e é isso que faz ↑↓ atravessarem uma linha curta e voltarem
-        // à coluna original em vez de grudarem no fim dela.
-        return caret with { Offset = CaretGeometry.OffsetAtColumn(target, caret.DesiredColumnPt, measurer) };
+        // à coluna original em vez de grudarem no fim dela. A afinidade, não: ela descreve uma
+        // fronteira da linha de onde o caret saiu, e carregá-la adiante desenharia o caret na
+        // linha errada quando a coluna alvo calhasse de cair numa outra fronteira.
+        return caret with
+        {
+            Offset = CaretGeometry.OffsetAtColumn(target, caret.DesiredColumnPt, measurer),
+            Affinity = CaretAffinity.Downstream,
+        };
     }
 
     private static Caret MoveToAdjacentPage(
@@ -184,6 +216,7 @@ public static class CaretNavigator
         return caret with
         {
             Offset = CaretGeometry.OffsetAtColumn(lines[targetLine], caret.DesiredColumnPt, measurer),
+            Affinity = CaretAffinity.Downstream,
         };
     }
 
@@ -191,7 +224,7 @@ public static class CaretNavigator
     {
         ArgumentNullException.ThrowIfNull(document);
 
-        return CaretGeometry.FindLine(caret.Offset, document);
+        return CaretGeometry.FindLine(caret.Offset, document, caret.Affinity);
     }
 
     // Um par substituto é um caractere só para quem escreveu. As setas atravessam os dois code

@@ -79,6 +79,36 @@ public sealed class CaretGeometryTests
         Assert.Equal(20.0, position.HeightPt);
     }
 
-    private static LaidOutLine FirstLine(string source) =>
-        LayoutEngine.Layout(MarkupParser.Parse(source), Settings, Measurer).Pages[0].Lines[0];
+    // Um offset, duas posições na tela. É o único caso em que a afinidade muda alguma coisa.
+    [Fact]
+    public void Fronteira_de_quebra_resolve_para_as_duas_linhas_conforme_a_afinidade()
+    {
+        var document = Layout("aaaaa bbbbbbbbb");
+
+        var upstream = CaretGeometry.Locate(6, document, Measurer, CaretAffinity.Upstream);
+        var downstream = CaretGeometry.Locate(6, document, Measurer, CaretAffinity.Downstream);
+
+        Assert.Equal(0.0, upstream.YPt);
+        Assert.Equal(60.0, upstream.XPt);
+
+        Assert.Equal(20.0, downstream.YPt);
+        Assert.Equal(0.0, downstream.XPt);
+    }
+
+    // Numa quebra explícita o \n ocupa uma posição entre as duas linhas, então não há empate e a
+    // afinidade não pode mudar nada.
+    [Fact]
+    public void Quebra_explicita_nao_e_ambigua()
+    {
+        var document = Layout("aaa\nbbb");
+
+        Assert.Equal(
+            CaretGeometry.Locate(3, document, Measurer, CaretAffinity.Downstream),
+            CaretGeometry.Locate(3, document, Measurer, CaretAffinity.Upstream));
+    }
+
+    private static PaginatedDocument Layout(string source) =>
+        LayoutEngine.Layout(MarkupParser.Parse(source), Settings, Measurer);
+
+    private static LaidOutLine FirstLine(string source) => Layout(source).Pages[0].Lines[0];
 }

@@ -253,6 +253,56 @@ Registrado desta fatia:
 - **Terceiro argumento para `tests/AcademicEditor.App.Tests/`**: teto de latência, piscar e
   rolagem só existem no App e ficaram cobertos por harness manual. Continua na Fase 4
 
+### Fatia 4.2 — Fronteira de quebra e fim de linha ✅
+
+Aberta ao testar a 4.1 no app: **End mandava o caret para a linha de baixo** e **Enter no fim da
+linha punha um espaço na linha de baixo**. A suspeita foi o fim de linha do mock. Acertou o
+sintoma e errou a causa — eram dois problemas distintos, e o principal não tinha nada a ver com
+o mock.
+
+Afinidade do caret — a causa dos dois bugs relatados:
+
+- [x] Numa quebra **por largura** o espaço fica com a linha de cima, então o fim de uma linha e o
+      começo da seguinte são **o mesmo offset**. `FindLine` devolvia sempre a linha de baixo, e por
+      isso End saltava de linha; ← no começo de uma linha quebrada devolvia o mesmo offset com a
+      mesma afinidade e não movia nada visível
+- [x] `CaretAffinity` (`Downstream`/`Upstream`) no `Caret`. Um offset, duas posições na tela: isso
+      é estado, não se deduz do offset. Numa quebra explícita não há empate, porque o `\n` ocupa
+      uma posição entre as duas linhas
+- [x] Cada movimento declara o lado que quer: End e ← que sobe → `Upstream`; Home, → e vertical →
+      `Downstream`. A afinidade **não** é carregada por ↑↓, senão descreveria uma fronteira da
+      linha de origem
+- [x] End pousa **depois** do espaço da quebra. Parece igual na tela — o espaço é invisível no fim
+      da linha — mas é o que faz o Enter ali deixar o espaço em cima. Medido: quebrar antes do
+      espaço produz ` palavra palavra…` na linha de baixo; depois dele, `palavra palavra…`
+- [x] Os quatro testes novos foram verificados vermelhos com a correção desligada
+
+Fim de linha — problema real, separado, encontrado na investigação:
+
+- [x] O mock era CRLF, confirmado **no binário**: o raw string literal do C# preserva o fim de
+      linha do arquivo-fonte, e a constante extraída do heap de strings do DLL tinha `\r\n`
+- [x] Com CRLF cru no buffer o `\r` fica fora de todo run, e **Backspace no início de uma linha
+      apagava só o `\n`, deixando um `\r` órfão** no meio do texto. Como Enter insere `"\n"`,
+      editar um documento CRLF ainda produzia fim de linha misto
+- [x] `LineEndings.NormalizeToLf` + normalização no `EditorDocument`, na construção e no `Insert`.
+      A invariante passa a ser **o buffer nunca contém `\r`** — é ela que dispensa o parser, o line
+      breaker e cada tecla de edição de saber o que fazer com CRLF
+- [x] `Insert` devolve quantos caracteres entraram: a normalização encurta o texto, e mover o caret
+      por `text.Length` o deixaria adiante do buffer numa colagem CRLF
+- [x] Dois mocks, `UniqueFeaturesLf` e `UniqueFeaturesCrLf`, **derivados de uma fonte só** — é o
+      que garante que difiram apenas no fim de linha e o que os torna imunes a alguém regravar o
+      arquivo. A `MainWindow` usa o CRLF de propósito: uma regressão aparece na primeira execução
+
+Registrado desta fatia:
+
+- **Gravação será sempre em LF.** Abrir um `.md` CRLF e salvar converte o arquivo — aceito, em
+  troca de um ponto único de conversão em vez de CRLF espalhado por todo o motor
+- **Aparar o espaço final ao quebrar a linha ficou de fora.** Alguns editores fazem; é opinião, e
+  um espaço invisível no fim da linha de cima não incomoda ninguém
+- **O teste do Enter não fica vermelho sem a correção**, porque `MoveToLineEnd` devolve o mesmo
+  offset com ou sem afinidade — o que mudava era só onde ele era desenhado. Ele guarda a decisão
+  de End pousar depois do espaço, não o bug em si
+
 ### Fatia 5 — Undo/redo, arquivo e atalhos
 
 - [ ] `UndoRedoStack` guardando delta estrutural da piece list, não cópias de texto

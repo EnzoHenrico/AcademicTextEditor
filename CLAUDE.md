@@ -72,6 +72,12 @@ num exportador PDF/CLI depois. A única costura Core↔App é a interface `IText
   autor tem de ver o que digitou. A única quebra automática é a da largura da página, do
   `LineBreaker`. Custo aceito: um `.md` quebrado à mão por outra ferramenta aparece com linhas
   curtas — reuni-las é trabalho de importação, não do editor.
+- **O buffer nunca contém `\r`.** O fim de linha é normalizado na entrada, no `EditorDocument`,
+  e a gravação será sempre em LF. Um ponto único de conversão dispensa o parser, o line breaker e
+  cada tecla de edição de carregar o caso especial do CRLF para sempre.
+- **Afinidade do caret é estado, não dedução.** Numa quebra por largura o espaço fica com a linha
+  de cima, então o fim dela e o começo da seguinte são o mesmo offset — um offset, duas posições
+  na tela. `CaretAffinity` desempata; sem ela, End cai na linha de baixo.
 - **Caret e navegação moram no Core** (`State/`), não no `PageSurface`. Mover o caret por
   linha/página exige consultar o `PaginatedDocument`, que é do Core; como função pura
   `(offset, PaginatedDocument) → offset`, isso é testável sem subsistema gráfico.

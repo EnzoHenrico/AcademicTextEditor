@@ -99,8 +99,11 @@ public sealed class EditorViewModel
             return;
         }
 
-        _document.Insert(_caret.Offset, text);
-        MoveCaretAfterEdit(_caret.Offset + text.Length);
+        // O comprimento vem do documento, não da string: a normalização de fim de linha pode
+        // encurtar o texto, e mover o caret por text.Length o deixaria adiante do buffer.
+        var inserted = _document.Insert(_caret.Offset, text);
+
+        MoveCaretAfterEdit(_caret.Offset + inserted);
         SchedulePagination();
     }
 
@@ -173,7 +176,7 @@ public sealed class EditorViewModel
     }
 
     private void RefreshCaretPosition() =>
-        CaretPosition = CaretGeometry.Locate(_caret.Offset, Paginated, _measurer);
+        CaretPosition = CaretGeometry.Locate(_caret.Offset, Paginated, _measurer, _caret.Affinity);
 
     private bool IsSurrogatePairEndingAt(int offset) =>
         offset >= 2

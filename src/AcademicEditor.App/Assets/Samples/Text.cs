@@ -1,11 +1,11 @@
-﻿namespace AcademicEditor.App.Assets.Samples;
+﻿﻿namespace AcademicEditor.App.Assets.Samples;
 
 public static class Text
 {
     // Conteúdo inicial até a Fatia 5 trazer abrir arquivo. Cada parágrafo é UMA linha da fonte,
     // porque é assim que o editor grava o que o autor digita: um \n é uma quebra visível. Quebrar
     // este texto à mão faria o motor mostrar as linhas curtas, fielmente.
-   public const string UniqueFeatures = """
+   private const string UniqueFeaturesSource = """
         # Paginação em tempo real
 
         Este parágrafo é uma única linha na fonte, e o motor de layout a quebra conforme a largura útil da página — a largura do papel menos as margens. Redimensionar a janela não muda nada aqui, porque a quebra acontece em pontos tipográficos sobre a geometria da folha, não sobre o tamanho da tela.
@@ -20,6 +20,18 @@ public static class Text
 
         Esta folha começou por uma quebra de página explícita no markup.
         """;
+
+   // As duas variantes são derivadas de uma fonte só, e não escritas à mão, por dois motivos: é o
+   // que garante que difiram APENAS no fim de linha — a propriedade sob teste — e é o que as torna
+   // imunes a alguém regravar este arquivo com outro fim de linha. O raw string literal do C#
+   // preserva o fim de linha do arquivo-fonte, e foi exatamente assim que um CRLF entrou aqui sem
+   // ninguém notar.
+
+   /// <summary>O texto como o editor o grava.</summary>
+   public static readonly string UniqueFeaturesLf = UniqueFeaturesSource.Replace("\r\n", "\n");
+
+   /// <summary>O mesmo texto vindo de um arquivo do Windows. Tem de dar a mesma tela.</summary>
+   public static readonly string UniqueFeaturesCrLf = UniqueFeaturesLf.Replace("\n", "\r\n");
 
    public const string MarkdownFeatures = """"
         md_content = """# Header Nível 1 (#)
