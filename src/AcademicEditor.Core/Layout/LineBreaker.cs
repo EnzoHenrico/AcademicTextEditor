@@ -45,20 +45,49 @@ public static class LineBreaker
             var text = run.Text.AsSpan(chunk.Start, chunk.Length);
             var width = measurer.MeasureWidthPt(text, run.Style);
 
-            // Espaço nunca provoca quebra. Consequência desejada: um espaço sobrando no fim da
-            // linha pode passar da margem, mas não empurra a próxima palavra para outra linha —
-            // é invisível na tela e faz parte do texto que a linha cobre.
-            if (chunk.IsSpace)
+            if (builder.PenXPt + width <= maxWidthPt)
             {
                 builder.Append(chunk, width);
                 index++;
                 continue;
             }
 
-            if (builder.PenXPt + width <= maxWidthPt)
+            // Não coube — e a margem vale para o branco também, com uma tolerância de UM caractere.
+            //
+            // É o que resolve a quebra comum, "palavra espaço palavra": ali o que sobra é um espaço
+            // só, ele fica pendurado na margem sem desenhar nada, e a linha de baixo começa na
+            // palavra. Descê-lo faria a linha nascer indentada por um caractere invisível — numa
+            // quebra gulosa a folga que sobra é uniforme entre zero e a largura da próxima palavra,
+            // então isso cai em cerca de uma quebra a cada seis. O que passa de um caractere desce:
+            // são brancos que o autor digitou de propósito, e eles têm lugar na tela.
+            //
+            // A tolerância não se acumula: com a linha já além da margem, o branco segue o caminho
+            // estrito e desce inteiro.
+            if (chunk.IsSpace && builder.PenXPt <= maxWidthPt)
             {
-                builder.Append(chunk, width);
-                index++;
+                var fits = LargestPrefixThatFits(
+                    text,
+                    run.Style,
+                    maxWidthPt - builder.PenXPt,
+                    measurer,
+                    minimum: 0);
+
+                // Sempre há o "+1": se o grupo inteiro coubesse, o teste acima o teria levado.
+                var taken = fits + 1;
+
+                builder.Append(chunk with { Length = taken }, measurer.MeasureWidthPt(text[..taken], run.Style));
+
+                if (taken == chunk.Length)
+                {
+                    // Grupo consumido inteiro pela tolerância. Quem fecha a linha é a palavra
+                    // seguinte, que já não cabe — fechar aqui emitiria uma linha vazia se este
+                    // fosse o último chunk do bloco.
+                    index++;
+                    continue;
+                }
+
+                chunks[index] = chunk with { Start = chunk.Start + taken, Length = chunk.Length - taken };
+                builder.EndLine();
                 continue;
             }
 
@@ -71,8 +100,6 @@ public static class LineBreaker
 
                 builder.Append(chunk with { Length = fit }, measurer.MeasureWidthPt(text[..fit], run.Style));
                 chunks[index] = chunk with { Start = chunk.Start + fit, Length = chunk.Length - fit };
-                builder.EndLine();
-                continue;
             }
 
             // Não avança o índice: a palavra que não coube abre a linha seguinte.
@@ -87,19 +114,25 @@ public static class LineBreaker
     }
 
     /// <summary>
-    /// Maior prefixo de <paramref name="text"/> que cabe em <paramref name="maxWidthPt"/>, com no
-    /// mínimo um caractere. Busca binária: a largura cresce monotonicamente com o prefixo, então
-    /// bastam O(log n) medições em vez de uma por caractere.
+    /// Maior prefixo de <paramref name="text"/> que cabe em <paramref name="maxWidthPt"/>. Busca
+    /// binária: a largura cresce monotonicamente com o prefixo, então bastam O(log n) medições em
+    /// vez de uma por caractere.
     /// </summary>
+    /// <param name="minimum">
+    /// Menor corte aceitável. Um garante progresso quando não há para onde empurrar o trecho; zero
+    /// só vale para o branco, onde "nada cabe" é resposta legítima porque quem leva a linha adiante
+    /// é o caractere da tolerância.
+    /// </param>
     private static int LargestPrefixThatFits(
         ReadOnlySpan<char> text,
         TextStyle style,
         double maxWidthPt,
-        ITextMeasurer measurer)
+        ITextMeasurer measurer,
+        int minimum = 1)
     {
-        var low = 1;
+        var low = minimum;
         var high = text.Length;
-        var best = 1;
+        var best = minimum;
 
         while (low <= high)
         {
@@ -119,7 +152,7 @@ public static class LineBreaker
         // Partir entre os dois halves de um par substituto quebraria o caractere em duas metades
         // inválidas, e cada uma viraria um losango na tela. Recua um; se não há para onde recuar,
         // avança e deixa o par inteiro estourar a margem — em ambos os casos o corte progride.
-        if (best < text.Length && char.IsHighSurrogate(text[best - 1]))
+        if (best > 0 && best < text.Length && char.IsHighSurrogate(text[best - 1]))
         {
             best = best == 1 ? Math.Min(2, text.Length) : best - 1;
         }

@@ -460,6 +460,50 @@ Registrado desta fatia:
 - **Continua sem teste de `EditorViewModel`** — os testes cobrem só o Core, e o ViewModel vive no
   App. É onde mora a propagação da afinidade, e é o pedaço desta fatia verificado à mão
 
+### Fatia 5.3 — Margem com tolerância de um branco ✅
+
+`LineBreaker` assumia que **espaço nunca provoca quebra**: o que não cabia era anexado à linha assim
+mesmo e passava da margem, sem limite. A suposição foi questionada — "as margens devem SEMPRE ser
+respeitadas" — e a fatia levou três estados até achar a regra que serve. As duas primeiras estão
+registradas porque cada uma tem um argumento verdadeiro, e é isso que impede a discussão de reabrir:
+
+- **Pendurar sem limite** (o original). Nenhum glifo passa da margem, porque um branco no fim da
+  linha não desenha nada. Mas um grupo de brancos projeta a linha arbitrariamente para fora do papel,
+  e o caret vai junto quando pousa depois deles
+- **Margem estrita para tudo** (a primeira tentativa). O branco que não cabe desce — e a linha de
+  baixo nasce indentada. Não é caso raro: a folga que sobra numa quebra gulosa é uniforme entre zero
+  e a largura da próxima palavra, então cai abaixo da largura de um espaço em **cerca de uma quebra
+  a cada seis**. Em texto real salta aos olhos, e foi visto na tela antes de cair
+
+O que ficou:
+
+- [x] **Tolerância de um caractere em branco, e só um.** A linha leva o que cabe mais um branco; o
+      resto do grupo desce. Na quebra comum — `palavra espaço palavra` — o que cabe é zero, então o
+      espaço fica pendurado e a linha de baixo começa na palavra, encostada na margem esquerda
+- [x] Palavra nenhuma ganha tolerância: continua descendo inteira, ou partida no que cabe quando
+      está sozinha numa linha vazia (URL, fórmula)
+- [x] A tolerância **não se acumula** — só é oferecida com a linha ainda dentro da margem. Fecha o
+      caso de dois chunks de branco seguidos, que acontece quando um run muda de estilo no meio deles
+- [x] `LargestPrefixThatFits` ganhou `minimum`: zero é corte legítimo para o branco, porque quem
+      leva a linha adiante é o caractere da tolerância. Para palavra continua sendo um, que é o que
+      garante progresso
+- [x] Duas garantias, dois testes sobre os mesmos seis textos: `InkExtentPt` desconta o branco final
+      e exige que **nenhum glifo** passe da margem; `ExtentPt` cru exige que **nenhuma linha** passe
+      dela por mais de um branco. O segundo fica vermelho se alguém voltar a pendurar o grupo inteiro
+- [x] A fronteira compartilhada não muda em nenhum dos três estados: a linha de cima termina onde a
+      de baixo começa. `CaretAffinity`, `IsSharedBoundary` e o Enter da Fatia 5.2 nunca foram tocados
+
+Registrado desta fatia:
+
+- **A Fatia 4.2 já tinha esbarrado nisto** pelo lado do Enter no fim da linha, e concluiu "pendura
+  porque é invisível". Estava meia certa: invisível não é o mesmo que ilimitado
+- **O caret ainda é desenhado até um branco além da margem** quando pousa depois do espaço pendurado.
+  É o único traço que atravessa a margem, e agora está limitado a um caractere. Some se a geometria
+  do caret o grampear na margem; fica anotado para quando incomodar
+- **Ir e voltar custou pouco porque o gate é verde a cada passo.** Os três estados foram uma troca no
+  mesmo `if` e a reescrita dos testes que afirmavam o comportamento anterior — o que dói é reverter
+  sem ter proposto a alternativa antes
+
 ### Fatia 6 — Fechamento da fase
 - [ ] Teste manual end-to-end via `./dev.sh run`
 - [ ] Documento longo (~300 páginas) para medir latência de repaginação e decidir se o

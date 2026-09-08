@@ -36,15 +36,92 @@ public sealed class LineBreakerTests
             line => Assert.Equal("ccc ddd", TextOf(line)));
     }
 
-    // O espaço sobrando no fim da linha pode passar da margem — é invisível — mas não pode
-    // provocar uma quebra que deixaria a linha aquém do que caberia nela.
+    // A tolerância de um branco. Sem ela o espaço desceria e a linha de baixo nasceria indentada
+    // por um caractere que não desenha nada — o que acontece em uma quebra a cada seis.
     [Fact]
-    public void Espaco_no_fim_da_linha_nao_conta_para_o_estouro()
+    public void Um_espaco_pode_passar_da_margem()
     {
         var lines = Break("abcdefghij ");
 
         var line = Assert.Single(lines);
         Assert.Equal("abcdefghij ", TextOf(line));
+    }
+
+    // O mesmo com o espaço dentro da margem — é o que mantém a fronteira compartilhada de que a
+    // CaretAffinity depende, e é a esmagadora maioria dos casos.
+    [Fact]
+    public void Espaco_que_cabe_fica_no_fim_da_linha()
+    {
+        var lines = Break("aaa bbbbbbbb");
+
+        Assert.Collection(
+            lines,
+            line => Assert.Equal("aaa ", TextOf(line)),
+            line => Assert.Equal("bbbbbbbb", TextOf(line)));
+    }
+
+    // A tolerância é de UM caractere, não do grupo: dois espaços cabem, o terceiro é a tolerância,
+    // o quarto desce. Brancos além disso o autor digitou de propósito, e têm lugar na tela.
+    [Fact]
+    public void Grupo_de_espacos_desce_o_que_passa_da_tolerancia()
+    {
+        var lines = Break("aaaaaaaa    bbb");
+
+        Assert.Collection(
+            lines,
+            line => Assert.Equal("aaaaaaaa   ", TextOf(line)),
+            line => Assert.Equal(" bbb", TextOf(line)));
+    }
+
+    // Espelho da palavra impartível: o grupo de brancos mais largo que a página é o outro jeito de
+    // travar o laço, porque ali o corte que cabe é zero — quem faz progredir é a tolerância.
+    [Fact]
+    public void Espacos_mais_largos_que_a_pagina_progridem()
+    {
+        var spaces = new string(' ', 25);
+
+        var lines = Break(spaces);
+
+        Assert.Equal(3, lines.Count);
+        Assert.Equal(spaces, string.Concat(lines.Select(TextOf)));
+    }
+
+    // A asserção do produto: nenhum glifo passa da margem — o espaço final não conta, porque não
+    // desenha nada — e nenhum caractere se perde no caminho.
+    [Theory]
+    [InlineData("abcdefghij ")]
+    [InlineData("aaaaaaaa    bbb")]
+    [InlineData("aaa bbb ccc ddd")]
+    [InlineData("aaaaaaaaa aaaaaaaaa aaaaaaaaa")]
+    [InlineData("abcdefghijklm")]
+    [InlineData("          ")]
+    public void Nenhum_glifo_passa_da_margem(string text)
+    {
+        var lines = Break(text);
+
+        Assert.All(lines, line => Assert.True(
+            InkExtentPt(line) <= MaxWidthPt,
+            $"linha '{TextOf(line)}' põe tinta até {InkExtentPt(line)}pt, além dos {MaxWidthPt}pt da margem"));
+
+        Assert.Equal(text, string.Concat(lines.Select(TextOf)));
+    }
+
+    // A outra metade da regra, e a que a tolerância existe para dar: o branco pendura na margem,
+    // mas um só. Este teste fica vermelho se alguém voltar a pendurar o grupo inteiro.
+    [Theory]
+    [InlineData("abcdefghij ")]
+    [InlineData("aaaaaaaa    bbb")]
+    [InlineData("aaa bbb ccc ddd")]
+    [InlineData("aaaaaaaaa aaaaaaaaa aaaaaaaaa")]
+    [InlineData("abcdefghijklm")]
+    [InlineData("          ")]
+    public void Nenhuma_linha_passa_da_margem_por_mais_de_um_branco(string text)
+    {
+        var tolerance = MaxWidthPt + Measurer.CharWidthPt;
+
+        Assert.All(Break(text), line => Assert.True(
+            ExtentPt(line) <= tolerance,
+            $"linha '{TextOf(line)}' chega a {ExtentPt(line)}pt, além dos {tolerance}pt tolerados"));
     }
 
     [Fact]
@@ -165,4 +242,28 @@ public sealed class LineBreakerTests
         LineBreaker.BreakIntoLines([new InlineRun(text, 0, TextStyle.Body)], MaxWidthPt, Measurer);
 
     private static string TextOf(LaidOutLine line) => string.Concat(line.Runs.Select(run => run.Text));
+
+    /// <summary>Até onde a linha chega, medida como foi assentada — o branco final incluído.</summary>
+    private static double ExtentPt(LaidOutLine line) =>
+        line.Runs.Count == 0 ? 0.0 : line.Runs[^1].XPt + line.Runs[^1].WidthPt;
+
+    /// <summary>
+    /// Até onde a linha desenha alguma coisa. O espaço final é descontado de propósito: ele ocupa
+    /// largura e não põe glifo nenhum no papel, e é essa distinção que a regra da margem usa.
+    /// </summary>
+    private static double InkExtentPt(LaidOutLine line)
+    {
+        for (var index = line.Runs.Count - 1; index >= 0; index--)
+        {
+            var run = line.Runs[index];
+            var ink = run.Text.AsSpan().TrimEnd();
+
+            if (ink.Length > 0)
+            {
+                return run.XPt + Measurer.MeasureWidthPt(ink, run.Style);
+            }
+        }
+
+        return 0.0;
+    }
 }

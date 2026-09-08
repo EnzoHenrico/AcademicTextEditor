@@ -75,6 +75,12 @@ num exportador PDF/CLI depois. A única costura Core↔App é a interface `IText
 - **O buffer nunca contém `\r`.** O fim de linha é normalizado na entrada, no `EditorDocument`,
   e a gravação será sempre em LF. Um ponto único de conversão dispensa o parser, o line breaker e
   cada tecla de edição de carregar o caso especial do CRLF para sempre.
+- **A margem vale para tudo, com tolerância de um caractere em branco.** O branco que sobra numa
+  quebra fica pendurado na margem — um só, e nunca uma palavra. É o que resolve a quebra comum
+  (`palavra espaço palavra`, cerca de uma quebra a cada seis) sem deixar a linha de baixo nascer
+  indentada por um caractere que não desenha nada; o que passa de um branco desce, porque são
+  brancos que o autor digitou de propósito. Duas garantias, cada uma com seu teste: **nenhum glifo
+  além da margem**, e **nenhuma linha além dela por mais de um branco**.
 - **Afinidade do caret é estado, não dedução.** Numa quebra por largura o espaço fica com a linha
   de cima, então o fim dela e o começo da seguinte são o mesmo offset — um offset, duas posições
   na tela. `CaretAffinity` desempata; sem ela, End cai na linha de baixo.
