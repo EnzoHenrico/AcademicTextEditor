@@ -114,6 +114,85 @@ public sealed class LayoutEngineTests
             linesFromCrLf.Select(line => (line.SourceStart, line.SourceLength)));
     }
 
+    // Com o caret no título, o "# " aparece e a linha passa a começar no offset 0 — não existe mais
+    // posição no arquivo sem posição na tela, que era a causa do Enter estragar a formatação.
+    [Fact]
+    public void Bloco_sob_o_caret_revela_a_marcacao()
+    {
+        // Título curto de propósito: em 20pt cabem 5 caracteres na largura útil deste teste, e um
+        // título mais longo quebraria em duas linhas e obscureceria o que se quer medir.
+        const string Source = "# Tí\n\ncorpo";
+
+        var hidden = Layout(Source, caretOffset: Source.Length);
+        var revealed = Layout(Source, caretOffset: 3);
+
+        var hiddenLine = hidden.Pages[0].Lines[0];
+        var revealedLine = revealed.Pages[0].Lines[0];
+
+        Assert.Equal(2, hiddenLine.SourceStart);
+        Assert.Equal("Tí", TextOf(hiddenLine));
+
+        Assert.Equal(0, revealedLine.SourceStart);
+        Assert.Equal("# Tí", TextOf(revealedLine));
+    }
+
+    // Só a largura muda. Se a altura mudasse, o documento inteiro subiria e desceria a cada vez que
+    // o caret entrasse ou saísse de um título.
+    [Fact]
+    public void Revelar_muda_a_largura_da_linha_nao_a_altura()
+    {
+        const string Source = "# Título";
+
+        var hidden = Layout(Source, caretOffset: -1).Pages[0].Lines[0];
+        var revealed = Layout(Source, caretOffset: 3).Pages[0].Lines[0];
+
+        Assert.Equal(hidden.HeightPt, revealed.HeightPt);
+        Assert.Equal(hidden.BaselinePt, revealed.BaselinePt);
+    }
+
+    [Fact]
+    public void Apenas_o_bloco_do_caret_revela()
+    {
+        const string Source = "# Um\n## Dois";
+
+        var lines = Layout(Source, caretOffset: 2).Pages[0].Lines;
+
+        Assert.Equal("# Um", TextOf(lines[0]));
+        Assert.Equal("Dois", TextOf(lines[1]));
+    }
+
+    [Fact]
+    public void Sem_caret_nada_revela()
+    {
+        var document = Layout("# Tí", caretOffset: -1);
+
+        Assert.Equal("Tí", TextOf(document.Pages[0].Lines[0]));
+        Assert.Equal(TextRange.Empty, document.RevealedBlock);
+    }
+
+    // É por este trecho que o ViewModel sabe quando uma seta não custa layout nenhum.
+    [Fact]
+    public void Paginado_diz_qual_bloco_revelou()
+    {
+        var document = Layout("# Título\n\ncorpo", caretOffset: 3);
+
+        Assert.Equal(new TextRange(0, 8), document.RevealedBlock);
+        Assert.True(document.RevealedBlock.Contains(0));
+        Assert.True(document.RevealedBlock.Contains(8));
+        Assert.False(document.RevealedBlock.Contains(9));
+    }
+
+    // Heading recém-aberto com a marcação escondida: a linha tem de reivindicar o offset do texto,
+    // não o do sustenido, senão o caret pousa antes da marcação que ele nem vê.
+    [Fact]
+    public void Heading_vazio_com_marcacao_escondida_ancora_no_texto()
+    {
+        var line = Layout("## ", caretOffset: -1).Pages[0].Lines[0];
+
+        Assert.Equal(3, line.SourceStart);
+        Assert.Equal(0, line.SourceLength);
+    }
+
     [Fact]
     public void Area_de_conteudo_nao_positiva_e_erro_de_programacao()
     {
@@ -122,6 +201,11 @@ public sealed class LayoutEngineTests
         Assert.Throws<ArgumentOutOfRangeException>(
             () => LayoutEngine.Layout(MarkupParser.Parse("texto"), impossible, Measurer));
     }
+
+    private static string TextOf(LaidOutLine line) => string.Concat(line.Runs.Select(run => run.Text));
+
+    private static PaginatedDocument Layout(string source, int caretOffset) =>
+        LayoutEngine.Layout(MarkupParser.Parse(source), Settings, Measurer, caretOffset);
 
     private static PaginatedDocument LayoutOf(EditorDocument document) =>
         Layout(document.CreateSnapshot().GetText());

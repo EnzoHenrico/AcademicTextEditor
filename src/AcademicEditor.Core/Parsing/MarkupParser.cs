@@ -15,7 +15,8 @@ namespace AcademicEditor.Core.Parsing;
 /// da largura da página, e é do <c>LineBreaker</c>.
 /// </para>
 /// <para>
-/// Cada bloco emite um <see cref="InlineRun"/>, todos com o mesmo estilo. A estrutura já suporta
+/// Cada bloco emite um <see cref="InlineRun"/> de texto, mais um de marcação quando tem. A
+/// estrutura já suporta
 /// runs heterogêneos numa linha — é o line breaker que quebra sobre a sequência — então
 /// acrescentar <c>**negrito**</c> depois é trabalho deste arquivo, não do motor de layout.
 /// </para>
@@ -57,9 +58,19 @@ public static class MarkupParser
     private static HeadingNode BuildHeading(string source, MarkupToken token)
     {
         var style = new TextStyle(HeadingSizesPt[token.Level - 1], FontWeightKind.Bold, Italic: false);
+        var markupLength = token.ContentStart - token.LineStart;
         var text = source.Substring(token.ContentStart, token.ContentLength);
 
-        return new HeadingNode(token.Level, token.LineStart, token.LineLength, BuildRuns(text, token.ContentStart, style));
+        // O "## " sai com o MESMO estilo do heading. Revelar a marcação passa a mudar a largura da
+        // linha, não a altura dela — senão o documento inteiro subiria e desceria a cada vez que o
+        // caret entrasse ou saísse de um título.
+        IReadOnlyList<InlineRun> runs =
+        [
+            new InlineRun(source.Substring(token.LineStart, markupLength), token.LineStart, style, IsMarkup: true),
+            new InlineRun(text, token.ContentStart, style),
+        ];
+
+        return new HeadingNode(token.Level, token.LineStart, token.LineLength, runs);
     }
 
     private static ParagraphNode BuildParagraph(string source, MarkupToken token)

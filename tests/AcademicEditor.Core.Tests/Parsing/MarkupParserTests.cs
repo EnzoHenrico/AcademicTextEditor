@@ -95,12 +95,26 @@ public sealed class MarkupParserTests
         var document = MarkupParser.Parse(source);
 
         var heading = Assert.IsType<HeadingNode>(Assert.Single(document.Blocks));
-        var run = Assert.Single(heading.Runs);
 
         Assert.Equal(expectedLevel, heading.Level);
-        Assert.Equal("Título", run.Text);
-        Assert.Equal(expectedLevel + 1, run.SourceStart);
-        Assert.Equal(FontWeightKind.Bold, run.Style.Weight);
+        Assert.Collection(
+            heading.Runs,
+            markup =>
+            {
+                // A marcação é um run como outro qualquer, e sai com o mesmo estilo do título:
+                // revelá-la muda a largura da linha, nunca a altura.
+                Assert.True(markup.IsMarkup);
+                Assert.Equal(source[..(expectedLevel + 1)], markup.Text);
+                Assert.Equal(0, markup.SourceStart);
+                Assert.Equal(FontWeightKind.Bold, markup.Style.Weight);
+            },
+            text =>
+            {
+                Assert.False(text.IsMarkup);
+                Assert.Equal("Título", text.Text);
+                Assert.Equal(expectedLevel + 1, text.SourceStart);
+                Assert.Equal(FontWeightKind.Bold, text.Style.Weight);
+            });
     }
 
     [Theory]
@@ -124,11 +138,11 @@ public sealed class MarkupParserTests
         var document = MarkupParser.Parse("## ");
 
         var heading = Assert.IsType<HeadingNode>(Assert.Single(document.Blocks));
-        var run = Assert.Single(heading.Runs);
+        var text = heading.Runs.Single(run => !run.IsMarkup);
 
-        Assert.Equal("", run.Text);
-        Assert.Equal(FontWeightKind.Bold, run.Style.Weight);
-        Assert.Equal(3, run.SourceStart);
+        Assert.Equal("", text.Text);
+        Assert.Equal(FontWeightKind.Bold, text.Style.Weight);
+        Assert.Equal(3, text.SourceStart);
     }
 
     [Fact]
@@ -211,5 +225,7 @@ public sealed class MarkupParserTests
         }
     }
 
-    private static string SingleRunText(BlockNode block) => Assert.Single(block.Runs).Text;
+    // Um heading tem dois runs: marcação e texto. O que interessa aos testes de conteúdo é o texto.
+    private static string SingleRunText(BlockNode block) =>
+        Assert.Single(block.Runs, run => !run.IsMarkup).Text;
 }

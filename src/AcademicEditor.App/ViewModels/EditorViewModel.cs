@@ -234,6 +234,13 @@ public sealed class EditorViewModel
     {
         _undo.Break();
         SetCaret(caret);
+
+        // Sair do bloco revelado muda o que se vê: a marcação dele se esconde e a do bloco novo
+        // aparece. Enquanto o caret fica dentro do mesmo bloco, a seta não custa layout nenhum.
+        if (!Paginated.RevealedBlock.Contains(_caret.Offset))
+        {
+            SchedulePagination();
+        }
     }
 
     private void SetCaret(Caret caret)
@@ -350,18 +357,20 @@ public sealed class EditorViewModel
         var generation = ++_requestedGeneration;
         var snapshot = _document.CreateSnapshot();
         var settings = _pageSettings;
+        var caretOffset = _caret.Offset;
         // A espera é contada desde a última publicação, não desde este pedido: sob repetição de
         // tecla ela encolhe a cada tecla até zerar no teto, publica, e recomeça inteira. O
         // resultado é uma publicação a cada MaxLatency, sem perder a coalescência no meio.
         var sincePublish = Environment.TickCount64 - _lastPublishedAtMs;
         var delay = (int)Math.Clamp(MaxLatencyMilliseconds - sincePublish, 0, DebounceMilliseconds);
 
-        _ = PaginateAsync(snapshot, settings, generation, delay, cancellation.Token);
+        _ = PaginateAsync(snapshot, settings, caretOffset, generation, delay, cancellation.Token);
     }
 
     private async Task PaginateAsync(
         TextBufferSnapshot snapshot,
         PageSettings settings,
+        int caretOffset,
         int generation,
         int delayMilliseconds,
         CancellationToken cancellationToken)
@@ -378,6 +387,7 @@ public sealed class EditorViewModel
                     MarkupParser.Parse(snapshot.GetText()),
                     settings,
                     _measurer,
+                    caretOffset,
                     cancellationToken),
                 cancellationToken).ConfigureAwait(false);
 

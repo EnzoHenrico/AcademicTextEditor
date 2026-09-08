@@ -13,6 +13,10 @@ namespace AcademicEditor.Core.Layout;
 /// </remarks>
 public static class LayoutEngine
 {
+    /// <param name="caretOffset">
+    /// Onde o caret está. O bloco que o contém tem a marcação revelada — é o que faz um título
+    /// mostrar o <c>## </c> enquanto se escreve nele e escondê-lo ao sair. Fora dele nada muda.
+    /// </param>
     /// <param name="cancellationToken">
     /// Verificado entre blocos. Paginar um documento longo custa, e a tecla seguinte já torna o
     /// resultado obsoleto — abandonar cedo devolve a thread em vez de terminar um cálculo que
@@ -22,6 +26,7 @@ public static class LayoutEngine
         DocumentNode document,
         PageSettings settings,
         ITextMeasurer measurer,
+        int caretOffset = -1,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -44,9 +49,20 @@ public static class LayoutEngine
             return new PaginatedDocument(breaker.Build(), settings);
         }
 
+        var revealed = TextRange.Empty;
+
         foreach (var block in document.Blocks)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            var reveals = caretOffset >= 0
+                && caretOffset >= block.SourceStart
+                && caretOffset <= block.SourceStart + block.SourceLength;
+
+            if (reveals)
+            {
+                revealed = new TextRange(block.SourceStart, block.SourceLength);
+            }
 
             if (block is PageBreakNode)
             {
@@ -54,12 +70,16 @@ public static class LayoutEngine
                 continue;
             }
 
-            foreach (var line in LineBreaker.BreakIntoLines(block.Runs, settings.ContentWidthPt, measurer))
+            foreach (var line in LineBreaker.BreakIntoLines(
+                block.Runs,
+                settings.ContentWidthPt,
+                measurer,
+                includeMarkup: reveals))
             {
                 breaker.AddLine(line);
             }
         }
 
-        return new PaginatedDocument(breaker.Build(), settings);
+        return new PaginatedDocument(breaker.Build(), settings, revealed);
     }
 }

@@ -20,17 +20,22 @@ namespace AcademicEditor.Core.Layout;
 /// </remarks>
 public static class LineBreaker
 {
+    /// <param name="includeMarkup">
+    /// Se a marcação de bloco entra na linha. Verdadeiro só para o bloco onde o caret está — é o
+    /// que revela o <c>## </c> de um título enquanto se escreve nele.
+    /// </param>
     public static List<LaidOutLine> BreakIntoLines(
         IReadOnlyList<InlineRun> runs,
         double maxWidthPt,
-        ITextMeasurer measurer)
+        ITextMeasurer measurer,
+        bool includeMarkup = false)
     {
         ArgumentNullException.ThrowIfNull(runs);
         ArgumentNullException.ThrowIfNull(measurer);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxWidthPt);
 
-        var builder = new LineAccumulator(runs, measurer);
-        var chunks = BuildChunks(runs);
+        var builder = new LineAccumulator(runs, measurer, includeMarkup);
+        var chunks = BuildChunks(runs, includeMarkup);
         var index = 0;
 
         while (index < chunks.Count)
@@ -126,12 +131,19 @@ public static class LineBreaker
     /// Fatia os runs em blocos alternados de palavra e espaço. É a granularidade em que a decisão
     /// de quebra é tomada; guarda índices, não substrings, para não alocar por palavra.
     /// </summary>
-    private static List<Chunk> BuildChunks(IReadOnlyList<InlineRun> runs)
+    private static List<Chunk> BuildChunks(IReadOnlyList<InlineRun> runs, bool includeMarkup)
     {
         var chunks = new List<Chunk>();
 
         for (var runIndex = 0; runIndex < runs.Count; runIndex++)
         {
+            // Descartar aqui, e não montar uma lista filtrada antes, evita uma alocação por bloco
+            // a cada repaginação — e são dezenas de milhares de blocos numa tese.
+            if (runs[runIndex].IsMarkup && !includeMarkup)
+            {
+                continue;
+            }
+
             var text = runs[runIndex].Text;
             var position = 0;
 
@@ -160,7 +172,10 @@ public static class LineBreaker
     /// <see cref="LaidOutRun"/>: sem isso, "abc def" viraria três runs e três chamadas de desenho
     /// onde uma basta.
     /// </summary>
-    private sealed class LineAccumulator(IReadOnlyList<InlineRun> runs, ITextMeasurer measurer)
+    private sealed class LineAccumulator(
+        IReadOnlyList<InlineRun> runs,
+        ITextMeasurer measurer,
+        bool includeMarkup)
     {
         private readonly List<LaidOutRun> _lineRuns = [];
 
@@ -219,15 +234,19 @@ public static class LineBreaker
 
             // Linha sem nenhum chunk (bloco vazio) ainda tem altura e uma posição no buffer:
             // é onde o caret fica quando o autor abre um parágrafo e ainda não digitou nada.
+            // A âncora é o primeiro run que a linha de fato usa: com a marcação escondida, um
+            // "# " recém-aberto tem de reivindicar o offset do texto, não o do sustenido.
+            var anchor = Anchor();
+
             if (_sourceStart < 0)
             {
-                _sourceStart = runs.Count > 0 ? runs[0].SourceStart : 0;
+                _sourceStart = anchor?.SourceStart ?? 0;
                 _sourceEnd = _sourceStart;
             }
 
             if (_heightPt <= 0)
             {
-                GrowToFit(runs.Count > 0 ? runs[0].Style : TextStyle.Body);
+                GrowToFit(anchor?.Style ?? TextStyle.Body);
             }
 
             Lines.Add(new LaidOutLine(
@@ -244,6 +263,19 @@ public static class LineBreaker
             _baselinePt = 0.0;
             _sourceStart = -1;
             _sourceEnd = -1;
+        }
+
+        private InlineRun? Anchor()
+        {
+            foreach (var run in runs)
+            {
+                if (includeMarkup || !run.IsMarkup)
+                {
+                    return run;
+                }
+            }
+
+            return null;
         }
 
         // A linha acompanha o maior estilo que a compõe: uma palavra em 20pt no meio de texto de
