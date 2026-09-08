@@ -78,6 +78,13 @@ num exportador PDF/CLI depois. A única costura Core↔App é a interface `IText
 - **Afinidade do caret é estado, não dedução.** Numa quebra por largura o espaço fica com a linha
   de cima, então o fim dela e o começo da seguinte são o mesmo offset — um offset, duas posições
   na tela. `CaretAffinity` desempata; sem ela, End cai na linha de baixo.
+- **Marcação de bloco é revelada na linha do caret** (`# ` num título), como Obsidian e Typora.
+  Sem isso existiriam posições no arquivo sem posição na tela, e o Enter no início de um título
+  tirava a formatação do texto. A marcação sai com o mesmo estilo do bloco: revelar muda a largura
+  da linha, nunca a altura. Custa uma repaginação por travessia de bloco.
+- **Marcadores de bloco (`\page`) são linhas atômicas.** Ocupam uma linha desenhada, o caret pousa
+  neles como unidade e as teclas de apagar removem o marcador inteiro — apagar só o `\n` que o
+  isola o transformaria em texto no meio da folha.
 - **Caret e navegação moram no Core** (`State/`), não no `PageSurface`. Mover o caret por
   linha/página exige consultar o `PaginatedDocument`, que é do Core; como função pura
   `(offset, PaginatedDocument) → offset`, isso é testável sem subsistema gráfico.

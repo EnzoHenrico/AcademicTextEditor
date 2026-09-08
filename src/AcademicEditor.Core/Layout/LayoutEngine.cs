@@ -66,6 +66,21 @@ public static class LayoutEngine
 
             if (block is PageBreakNode)
             {
+                // A linha entra ANTES da quebra: o marcador fica no rodapé da folha que ele
+                // encerra, como no Word. Cobre o trecho real do bloco — que não é sempre "\page",
+                // porque espaços em volta continuam valendo — e quem o trata como unidade
+                // indivisível é o CaretNavigator, pelo Kind.
+                var metrics = measurer.GetLineMetrics(TextStyle.Body);
+
+                breaker.AddLine(new LaidOutLine(
+                    YPt: 0.0,
+                    metrics.HeightPt,
+                    metrics.BaselinePt,
+                    [],
+                    block.SourceStart,
+                    block.SourceLength,
+                    LineKind.PageBreak));
+
                 breaker.ForcePageBreak();
                 continue;
             }

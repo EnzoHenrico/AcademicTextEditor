@@ -365,6 +365,57 @@ Registrado desta fatia:
 - **Não há aviso de documento não salvo ao fechar a janela.** Fica para quando houver mais de um
   documento aberto
 
+### Fatia 5.1 — Marcação revelada, quebra atômica e navegação vertical ✅
+
+Três bugs encontrados usando o editor. Dois eram o mesmo defeito de fronteira que a 4.2 tratou
+pela metade; o terceiro era marcação que existe no arquivo e não existia na tela.
+
+Navegação vertical:
+
+- [x] ↑/↓ "travando" depois de Home/End **não era** falta de linha adjacente, que era a hipótese.
+      `MoveToAdjacentLine` fixava `Downstream`, e depois de End a coluna alvo vira a largura cheia
+      da linha — então o movimento cai exatamente na fronteira de uma quebra por largura, onde o
+      fim de uma linha é o começo da seguinte. Na prática ↑ ia ao começo da mesma linha e ↓ pulava uma
+- [x] Escolhe-se a afinidade que resolve para a linha de destino, e ela só é reivindicada onde
+      desempata algo. Um teste antigo que comparava carets inteiros voltou a passar sozinho ao
+      apertar essa definição
+- [x] Borda do documento: ↑ na primeira linha vai ao começo dela, ↓ na última ao fim. Tecla morta
+      parece editor travado
+
+Marcação revelada:
+
+- [x] `# Título` tinha os offsets 0 e 1 fora de toda linha: **posição no arquivo sem posição na
+      tela**. Daí o caret pousar depois da tag e o Enter partir o bloco em heading vazio + parágrafo
+- [x] A marcação passa a aparecer enquanto o caret está no bloco, como Obsidian e Typora. Sem
+      posição oculta, o Enter antes dela empurra o título inteiro para baixo sem caso especial
+- [x] A marcação sai do parser com o **mesmo estilo** do título: revelar muda a largura da linha,
+      nunca a altura, senão o documento subiria e desceria a cada entrada e saída do caret
+- [x] `LineBreaker` descarta os runs de marcação ao montar os chunks, e não recebendo lista
+      filtrada — seria uma alocação por bloco a cada repaginação. A âncora da linha vazia é o
+      primeiro run que a linha usa, senão um `## ` recém-aberto reivindica o offset do sustenido
+- [x] `PaginatedDocument` carrega o trecho revelado: enquanto o caret ficar dentro dele, a seta não
+      dispara layout nenhum
+
+Quebra de página atômica:
+
+- [x] `\page` não gerava linha alguma — invisível, inalcançável pelo caret, mas editável por
+      acidente: Backspace na linha seguinte comia o `\n` que o isolava e ele virava texto na folha
+- [x] Passa a ocupar uma linha desenhada como filete tracejado, no rodapé da folha que encerra
+- [x] A linha cobre o trecho **real** do bloco (`  \page  ` também vale), e quem o trata como
+      unidade é o `CaretNavigator` pelo `LineKind` — as setas o atravessam de uma tecla
+- [x] `BlockMarkers` decide no Core o que Backspace e Delete removem quando um marcador está no
+      caminho: o marcador inteiro mais o `\n`, ou nada
+- [x] Apagar um marcador é um grupo de undo próprio: desfazer devolve a quebra de página de uma vez
+
+Registrado desta fatia:
+
+- **Revelar custa uma repaginação por travessia de bloco.** É o segundo argumento concreto para o
+  reflow incremental da Fase 4 — o primeiro é a repaginação por tecla. A Fatia 6 mede
+- **A quebra de página não é revelada como texto**, ao contrário do heading: é um objeto sem texto
+  para o autor editar, e o Word faz o mesmo. A inconsistência é deliberada
+- **Marcação inline (`**negrito**`) ainda não existe** — o parser emite um run de texto por bloco.
+  O mecanismo de revelar já está pronto para ela
+
 ### Fatia 6 — Fechamento da fase
 - [ ] Teste manual end-to-end via `./dev.sh run`
 - [ ] Documento longo (~300 páginas) para medir latência de repaginação e decidir se o

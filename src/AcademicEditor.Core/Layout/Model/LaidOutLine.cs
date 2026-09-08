@@ -1,5 +1,19 @@
 namespace AcademicEditor.Core.Layout.Model;
 
+/// <summary>O que a linha é, para quem desenha e para quem edita.</summary>
+/// <remarks>
+/// Enum e não booleano: filete horizontal e outros marcadores de bloco entram aqui depois, e cada
+/// um deles é desenhado de um jeito e apagado como uma unidade.
+/// </remarks>
+public enum LineKind
+{
+    /// <summary>Linha de texto comum, inclusive a vazia.</summary>
+    Text,
+
+    /// <summary>Marcador de quebra de página. Desenhado como um filete, apagado inteiro.</summary>
+    PageBreak,
+}
+
 /// <summary>
 /// Uma linha visual já quebrada e posicionada. Imutável: a publicação do layout para a UI é uma
 /// troca de referência atômica, sem lock.
@@ -18,7 +32,8 @@ public sealed record LaidOutLine(
     double BaselinePt,
     IReadOnlyList<LaidOutRun> Runs,
     int SourceStart,
-    int SourceLength)
+    int SourceLength,
+    LineKind Kind = LineKind.Text)
 {
     public int SourceEnd => SourceStart + SourceLength;
 }

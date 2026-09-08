@@ -158,6 +158,14 @@ public sealed class EditorViewModel
             return;
         }
 
+        // Um marcador de bloco sai inteiro ou não sai: apagar o '\n' que isola um \page o grudaria
+        // no texto de cima, e ele deixaria de ser quebra de página para virar texto na folha.
+        if (BlockMarkers.BackspaceRange(_caret.Offset, Paginated) is { } marker)
+        {
+            RemoveRange(marker);
+            return;
+        }
+
         // Um par substituto é um caractere só para quem escreveu, e dois para o buffer. Apagar
         // metade dele deixaria um code unit órfão, que vira losango na tela e lixo no arquivo.
         var length = IsSurrogatePairEndingAt(_caret.Offset) ? 2 : 1;
@@ -177,12 +185,39 @@ public sealed class EditorViewModel
             return;
         }
 
+        if (BlockMarkers.DeleteRange(_caret.Offset, Paginated) is { } marker)
+        {
+            RemoveRange(marker);
+            return;
+        }
+
         var length = IsSurrogatePairStartingAt(_caret.Offset) ? 2 : 1;
         var before = _caret.Offset;
         var edit = _document.Delete(before, length);
 
         _undo.Record(edit, EditKind.Deleting, before, before);
         MoveCaretAfterEdit(before);
+        MarkModified();
+        SchedulePagination();
+    }
+
+    /// <summary>Apaga um trecho inteiro — um marcador de bloco — como uma única edição.</summary>
+    private void RemoveRange(TextRange range)
+    {
+        var length = Math.Min(range.Length, _document.Length - range.Start);
+
+        if (length <= 0)
+        {
+            return;
+        }
+
+        var before = _caret.Offset;
+        var edit = _document.Delete(range.Start, length);
+
+        // EditKind.Other: apagar um marcador não se junta a uma rajada de Backspace. Desfazer tem
+        // de devolver a quebra de página numa vez só.
+        _undo.Record(edit, EditKind.Other, before, range.Start);
+        MoveCaretAfterEdit(range.Start);
         MarkModified();
         SchedulePagination();
     }

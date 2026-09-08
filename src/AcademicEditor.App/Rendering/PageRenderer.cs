@@ -32,6 +32,13 @@ public static class PageRenderer
     private static readonly IBrush TextBrush = Brushes.Black;
     private static readonly IPen PageBorderPen = new Pen(new SolidColorBrush(Color.FromRgb(0xC8, 0xC8, 0xC8)), 1.0);
 
+    // Tracejado, como a marca de quebra de página de um processador de texto: diz que ali há um
+    // comando do autor, e não texto — e diz sem sujar a folha com a palavra "\page".
+    private static readonly IPen PageBreakPen = new Pen(
+        new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0x9A)),
+        1.0,
+        new DashStyle([4.0, 3.0], 0.0));
+
     /// <summary>Tamanho que a pilha de folhas ocupa, para o <c>ScrollViewer</c> saber o que rolar.</summary>
     public static Size MeasureStack(PaginatedDocument document)
     {
@@ -117,6 +124,18 @@ public static class PageRenderer
         foreach (var line in page.Lines)
         {
             var baselineDip = contentTopDip + ((line.YPt + line.BaselinePt) * PtToDip);
+
+            if (line.Kind == LineKind.PageBreak)
+            {
+                var y = contentTopDip + ((line.YPt + (line.HeightPt / 2.0)) * PtToDip);
+
+                context.DrawLine(
+                    PageBreakPen,
+                    new Point(contentLeftDip, y),
+                    new Point(contentLeftDip + (settings.ContentWidthPt * PtToDip), y));
+
+                continue;
+            }
 
             foreach (var run in line.Runs)
             {

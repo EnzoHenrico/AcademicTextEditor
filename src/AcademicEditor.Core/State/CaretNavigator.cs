@@ -60,7 +60,7 @@ public static class CaretNavigator
 
         var current = document.Pages[page].Lines[line];
 
-        if (caret.Offset > current.SourceStart)
+        if (current.Kind == LineKind.Text && caret.Offset > current.SourceStart)
         {
             return At(caret.Offset - StepBefore(current, caret.Offset), document, measurer);
         }
@@ -74,7 +74,8 @@ public static class CaretNavigator
 
         // Numa quebra por largura este offset é o mesmo de onde o caret saiu, e é a afinidade que
         // o desenha no fim da linha de cima em vez de deixá-lo parado.
-        var end = document.Pages[previousPage].Lines[previousLine].SourceEnd;
+        var previous = document.Pages[previousPage].Lines[previousLine];
+        var end = Stop(previous, atEnd: true);
 
         return At(end, document, measurer, AffinityFor(document, previousPage, previousLine, end));
     }
@@ -90,7 +91,7 @@ public static class CaretNavigator
 
         var current = document.Pages[page].Lines[line];
 
-        if (caret.Offset < current.SourceEnd)
+        if (current.Kind == LineKind.Text && caret.Offset < current.SourceEnd)
         {
             return At(caret.Offset + StepAfter(current, caret.Offset), document, measurer);
         }
@@ -99,7 +100,7 @@ public static class CaretNavigator
 
         return nextPage < 0
             ? caret
-            : At(document.Pages[nextPage].Lines[nextLine].SourceStart, document, measurer);
+            : At(Stop(document.Pages[nextPage].Lines[nextLine], atEnd: false), document, measurer);
     }
 
     public static Caret MoveUp(Caret caret, PaginatedDocument document, ITextMeasurer measurer) =>
@@ -131,7 +132,7 @@ public static class CaretNavigator
             return caret;
         }
 
-        var end = document.Pages[page].Lines[line].SourceEnd;
+        var end = Stop(document.Pages[page].Lines[line], atEnd: true);
 
         return At(end, document, measurer, AffinityFor(document, page, line, end));
     }
@@ -262,6 +263,18 @@ public static class CaretNavigator
 
         return CaretGeometry.FindLine(caret.Offset, document, caret.Affinity);
     }
+
+    /// <summary>
+    /// Onde o caret pousa nesta linha. Numa linha de texto, no extremo pedido; num marcador de
+    /// bloco, sempre no início.
+    /// </summary>
+    /// <remarks>
+    /// Um marcador é indivisível: ele só significa quebra de página enquanto estiver sozinho na
+    /// linha, então uma posição no meio dele não descreve nada que o autor possa editar. As setas
+    /// o atravessam de uma tecla, como fazem com um par substituto.
+    /// </remarks>
+    private static int Stop(LaidOutLine line, bool atEnd) =>
+        line.Kind == LineKind.Text && atEnd ? line.SourceEnd : line.SourceStart;
 
     // Um par substituto é um caractere só para quem escreveu. As setas atravessam os dois code
     // units de uma vez, senão metade das teclas não moveria o caret lugar nenhum visível.
