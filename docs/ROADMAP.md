@@ -506,8 +506,54 @@ Registrado desta fatia:
 
 ### Fatia 6 — Fechamento da fase
 - [ ] Teste manual end-to-end via `./dev.sh run`
-- [ ] Documento longo (~300 páginas) para medir latência de repaginação e decidir se o
-      reflow incremental precisa ser antecipado da Fase 4. Registrar o número medido aqui
+- [x] Documento longo (~300 páginas) para medir latência de repaginação e decidir se o
+      reflow incremental precisa ser antecipado da Fase 4
+
+**Medido.** "Tempo" é o cronômetro em volta de **uma repaginação completa** — `MarkupParser.Parse`
+mais `LayoutEngine.Layout` sobre o documento inteiro, já aquecido, sem desenho e sem I/O. É o
+número que importa porque hoje **toda** repaginação é completa: não há reflow incremental, então é
+isso que cada tecla dispara.
+
+Duas parcelas, com o mesmo formato de documento — parágrafos de 100 palavras separados por linha
+em branco, A4 com margens de 1" — mas **corpus de tamanhos diferentes**: cada lado foi
+dimensionado para chegar perto de 300 páginas, e o medidor real cabe muito mais caractere por
+linha. **Os totais não se subtraem; o que se compara é o custo por linha.**
+
+| | algoritmo (`FakeTextMeasurer`) | real (`AvaloniaTextMeasurer`) |
+|---|---|---|
+| caracteres do corpus | 409.529 | 1.215.789 |
+| páginas | 314 | 352 |
+| linhas | 10.668 | 19.001 |
+| tempo de uma repaginação | 33 ms | **1.304 ms** |
+| **por linha** | **3,11 µs** | **68,63 µs** |
+
+`LayoutPerformanceTests` mede a primeira coluna e guarda um teto de 3s contra regressão de ordem
+de grandeza; `--measure-layout` no App mede a segunda, com o medidor instrumentado.
+
+**O motor não é o gargalo — a medição de texto é.** 68,63 ÷ 3,11 ≈ **22**: medir texto de verdade
+custa vinte e duas vezes o que custa todo o resto do motor junto. A passada instrumentada confirma
+pelo outro lado — **1,27s dos 1,3s (97,5%) estão dentro do `ITextMeasurer`**, em 416.739 chamadas a
+`MeasureWidthPt`, cada uma construindo um `TextLayout` e alocando uma string, porque o line breaker
+mede chunk a chunk (~22 por linha). As outras 380.001 chamadas são `GetLineMetrics`, que o cache
+por estilo já resolve: são buscas em dicionário e não pesam.
+
+Na prática: **digitar num documento de 352 páginas deixa a tela 1,3s atrás do buffer.** A janela
+não trava, porque o layout roda em background e é cancelável — mas cada tecla cancela a
+repaginação pendente, então a tela só alcança o texto quando o autor para de digitar.
+
+Decisão que sai daí:
+
+- **O reflow incremental não é o primeiro remédio.** Ele reduz *quantas* linhas são medidas de
+  novo, o que ajuda muito na digitação, mas o custo por linha continua o mesmo — e a primeira
+  paginação ao abrir o arquivo continua custando 1,3s
+- **O primeiro remédio é o cache de medição por `(texto, estilo)`**, exatamente o que o comentário
+  do `AvaloniaTextMeasurer` já apontava. Palavra se repete muito em prosa, e o line breaker mede a
+  mesma palavra toda vez que ela aparece
+- **Ressalva honesta sobre o número:** o corpus sintético tem 18 palavras distintas, então um cache
+  acertaria quase 100% ali e mediria a si mesmo. O ganho real precisa ser medido com texto de
+  verdade antes de se dar por resolvido
+- **Os dois se somam, e nessa ordem:** o cache derruba o custo por linha, o reflow incremental
+  derruba o número de linhas remedidas. Só o segundo deixaria a abertura do arquivo em 1,3s
 
 ---
 

@@ -33,6 +33,7 @@ Padrão do projeto. **Pasta = namespace**, verificado pela guarda de namespaces 
 │       ├── Controls/            # Controles customizados (PageSurface)
 │       ├── Rendering/           # PageRenderer, AvaloniaTextMeasurer
 │       ├── Input/               # ShortcutDispatcher, FocusScopeTracker
+│       ├── Diagnostics/         # Medições que precisam do medidor real (LayoutBenchmark)
 │       └── Assets/              # Fontes, ícones, temas
 │
 └── tests/
