@@ -124,7 +124,7 @@ public sealed class PageSurface : Control
                 break;
 
             case Key.Enter:
-                _viewModel.InsertText("\n");
+                _viewModel.InsertLineBreak();
                 e.Handled = true;
                 break;
 

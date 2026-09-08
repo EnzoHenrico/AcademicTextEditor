@@ -416,6 +416,50 @@ Registrado desta fatia:
 - **Marcação inline (`**negrito**`) ainda não existe** — o parser emite um run de texto por bloco.
   O mecanismo de revelar já está pronto para ela
 
+### Fatia 5.2 — Editar sobre a fronteira de uma quebra por largura ✅
+
+Enter e Backspace no início de uma linha "não faziam nada": era preciso apertar duas vezes. A
+4.2 e a 5.1 trataram a fronteira para **navegar**; faltava tratá-la para **editar**.
+
+- [x] Não havia tecla perdida nem `\n` engolido. Numa quebra por largura o espaço fica com a
+      linha de cima, então `linhaA.SourceEnd == linhaB.SourceStart` — e um `\n` inserido ali só
+      torna explícita a quebra que a margem já impunha. `aaaaa bbbbbbbbb` e `aaaaa \nbbbbbbbbb`
+      desenham **os mesmos pixels**; só o segundo `\n` abre a linha em branco que o autor pediu
+- [x] A regra: **materializar a quebra antes de editar.** Na fronteira, a tecla primeiro
+      transforma a quebra implícita em `\n` — as duas posições de tela voltam a ser dois offsets
+      distintos — e só então faz o que faria numa quebra explícita
+- [x] `CaretGeometry.IsSharedBoundary` expõe o teste que já existia enterrado no `Resolve`, e o
+      `Resolve` passa a usá-lo: uma definição só de "as duas linhas dividem este offset"
+- [x] `LineBreaks.ForEnter` conta os `\n` e diz onde o caret pousa. No Core, e não no ViewModel,
+      porque a decisão depende do `PaginatedDocument` e porque é a regra que precisa de teste —
+      mesmo raciocínio do `BlockMarkers`
+- [x] O lado da fronteira decide o caret: `Downstream` (começo da linha de baixo) desce junto com
+      o texto que empurrou; `Upstream` (fim da linha de cima, onde End pousa) fica na linha nova
+      em branco. É o que End seguido de Enter faz em qualquer editor
+- [x] **A afinidade sobrevive à edição.** `MoveCaretAfterEdit` e o `Publish` fixavam `Downstream`,
+      e `CaretNavigator.At` nunca recebia o parâmetro que sempre aceitou. Era a segunda metade do
+      defeito: apagar um `\n` cuja quebra a margem refaz no mesmo lugar devolve uma tela idêntica,
+      e o caret era redesenhado no começo da linha de baixo, exatamente de onde saiu
+- [x] Backspace pousa `Upstream` — no fim da linha de cima; Delete preserva o lado de onde apagou;
+      digitar preserva o lado, senão escrever no fim de uma linha quebrada pela margem faria o
+      caret saltar para a linha de baixo a cada tecla
+- [x] O teste que fixa o sintoma é o do layout, não o da função: parágrafo que quebra em duas
+      linhas → Enter na fronteira → **três linhas, a do meio com `SourceLength == 0`**, e o caret
+      na terceira. Ao lado dele, o que prova a premissa: um `\n` só devolve as mesmas duas linhas
+
+Registrado desta fatia:
+
+- **Backspace na fronteira apaga o espaço da quebra**, e não atravessa a fronteira sem apagar. As
+  duas leituras são defensáveis — a segunda é o espelho exato do Enter —, e a escolha é do autor:
+  nenhuma tecla de apagar deve gastar um toque sem tirar nada do texto
+- **`InsertLineBreak` e `DeleteBackward` consultam o último layout publicado**, até ~50ms atrás do
+  buffer por causa do debounce. Digitar e apertar Enter dentro dessa janela pode ler uma fronteira
+  deslocada e inserir um `\n` a mais ou a menos. É a mesma exposição do `BlockMarkers`; um layout
+  síncrono na UI thread fecharia a janela e não vale o preço agora. A hora de reabrir é se a linha
+  em branco indesejada aparecer de verdade
+- **Continua sem teste de `EditorViewModel`** — os testes cobrem só o Core, e o ViewModel vive no
+  App. É onde mora a propagação da afinidade, e é o pedaço desta fatia verificado à mão
+
 ### Fatia 6 — Fechamento da fase
 - [ ] Teste manual end-to-end via `./dev.sh run`
 - [ ] Documento longo (~300 páginas) para medir latência de repaginação e decidir se o

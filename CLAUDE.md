@@ -78,6 +78,13 @@ num exportador PDF/CLI depois. A única costura Core↔App é a interface `IText
 - **Afinidade do caret é estado, não dedução.** Numa quebra por largura o espaço fica com a linha
   de cima, então o fim dela e o começo da seguinte são o mesmo offset — um offset, duas posições
   na tela. `CaretAffinity` desempata; sem ela, End cai na linha de baixo.
+- **Editar sobre uma fronteira de quebra por largura materializa a quebra primeiro.** Ali o fim de
+  uma linha e o começo da seguinte são o mesmo offset, e um `\n` sozinho só torna explícita a
+  quebra que a margem já impunha: a tela fica idêntica e o Enter parece não ter funcionado. Enter
+  na fronteira insere dois — o primeiro paga a quebra que existia, o segundo abre a linha em
+  branco. Quem conta é `LineBreaks.ForEnter`, no Core, porque só o layout sabe onde a margem
+  quebrou. Corolário: **a afinidade sobrevive à edição** — sem ela o caret volta sempre para o
+  começo da linha de baixo e a tecla parece não ter feito nada.
 - **Marcação de bloco é revelada na linha do caret** (`# ` num título), como Obsidian e Typora.
   Sem isso existiriam posições no arquivo sem posição na tela, e o Enter no início de um título
   tirava a formatação do texto. A marcação sai com o mesmo estilo do bloco: revelar muda a largura

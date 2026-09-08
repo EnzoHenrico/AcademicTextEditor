@@ -107,6 +107,24 @@ public sealed class CaretGeometryTests
             CaretGeometry.Locate(3, document, Measurer, CaretAffinity.Upstream));
     }
 
+    // A fronteira compartilhada é o que distingue a quebra que o autor escreveu da que a margem
+    // impôs — e é o que decide quantos \n um Enter precisa inserir ali.
+    [Fact]
+    public void Fronteira_compartilhada_e_so_a_da_quebra_por_largura()
+    {
+        var wrapped = Layout("aaaaa bbbbbbbbb");
+
+        Assert.True(CaretGeometry.IsSharedBoundary(6, wrapped));
+
+        Assert.False(CaretGeometry.IsSharedBoundary(5, wrapped));
+        Assert.False(CaretGeometry.IsSharedBoundary(0, wrapped));
+        Assert.False(CaretGeometry.IsSharedBoundary(15, wrapped));
+
+        // O \n ocupa uma posição entre as duas linhas: nenhum offset serve às duas.
+        Assert.False(CaretGeometry.IsSharedBoundary(3, Layout("aaa\nbbb")));
+        Assert.False(CaretGeometry.IsSharedBoundary(4, Layout("aaa\nbbb")));
+    }
+
     private static PaginatedDocument Layout(string source) =>
         LayoutEngine.Layout(MarkupParser.Parse(source), Settings, Measurer);
 

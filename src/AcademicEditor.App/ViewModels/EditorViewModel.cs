@@ -124,7 +124,27 @@ public sealed class EditorViewModel
         }
     }
 
-    public void InsertText(string text)
+    public void InsertText(string text) => Insert(text, caretAdvance: null);
+
+    /// <summary>Enter: abre uma linha em branco onde o caret está.</summary>
+    /// <remarks>
+    /// Não é um <c>InsertText("\n")</c>. Na fronteira de uma quebra por largura um <c>\n</c> só
+    /// torna explícita a quebra que a margem já impunha, e a tela não muda — quem conta quantos
+    /// são precisos, e para onde o caret vai depois, é <see cref="LineBreaks.ForEnter"/>, no Core.
+    /// </remarks>
+    public void InsertLineBreak()
+    {
+        var lineBreak = LineBreaks.ForEnter(_caret, Paginated);
+
+        Insert(lineBreak.Text, lineBreak.CaretDelta);
+    }
+
+    /// <param name="caretAdvance">
+    /// Quanto o caret anda, quando quem chamou sabe mais que o comprimento inserido. É o caso do
+    /// Enter na fronteira de uma quebra: entram dois <c>\n</c>, mas o caret pode parar no
+    /// primeiro. <c>null</c> é o caso comum — o caret vai para depois do que entrou.
+    /// </param>
+    private void Insert(string text, int? caretAdvance)
     {
         if (string.IsNullOrEmpty(text))
         {
@@ -141,12 +161,18 @@ public sealed class EditorViewModel
             return;
         }
 
+        var after = before + (caretAdvance ?? edit.LengthDelta);
+
         // Só um caractere digitado se junta ao anterior no undo. Um Enter ou uma colagem abrem
         // grupo próprio: desfazer tem de devolver o documento a um estado que o autor reconheça.
         var kind = text.Length == 1 && text[0] != '\n' ? EditKind.Typing : EditKind.Other;
 
-        _undo.Record(edit, kind, before, before + edit.LengthDelta);
-        MoveCaretAfterEdit(before + edit.LengthDelta);
+        _undo.Record(edit, kind, before, after);
+
+        // A afinidade sobrevive à digitação: quem está escrevendo no fim de uma linha quebrada
+        // pela margem continua escrevendo lá, e não salta para o começo da linha de baixo a cada
+        // tecla que recoloca o caret exatamente sobre a fronteira.
+        MoveCaretAfterEdit(after, _caret.Affinity);
         MarkModified();
         SchedulePagination();
     }
@@ -173,7 +199,13 @@ public sealed class EditorViewModel
         var edit = _document.Delete(before - length, length);
 
         _undo.Record(edit, EditKind.Deleting, before, before - length);
-        MoveCaretAfterEdit(before - length);
+
+        // Upstream: apagar para trás pousa no FIM da linha de cima. Quando o caractere que saiu
+        // era o '\n' de uma quebra que a margem refaz no mesmo lugar, a tela fica idêntica — e
+        // sem a afinidade o caret seria redesenhado no começo da linha de baixo, exatamente onde
+        // estava, como se a tecla não tivesse feito nada. Fora de uma fronteira compartilhada ela
+        // é inerte, porque CaretGeometry só recua quando as duas linhas dividem o offset.
+        MoveCaretAfterEdit(before - length, CaretAffinity.Upstream);
         MarkModified();
         SchedulePagination();
     }
@@ -195,8 +227,10 @@ public sealed class EditorViewModel
         var before = _caret.Offset;
         var edit = _document.Delete(before, length);
 
+        // O caret não sai do lugar: preservar a afinidade é o que o mantém desenhado do mesmo
+        // lado da fronteira de onde o autor apagou.
         _undo.Record(edit, EditKind.Deleting, before, before);
-        MoveCaretAfterEdit(before);
+        MoveCaretAfterEdit(before, _caret.Affinity);
         MarkModified();
         SchedulePagination();
     }
@@ -217,7 +251,7 @@ public sealed class EditorViewModel
         // EditKind.Other: apagar um marcador não se junta a uma rajada de Backspace. Desfazer tem
         // de devolver a quebra de página numa vez só.
         _undo.Record(edit, EditKind.Other, before, range.Start);
-        MoveCaretAfterEdit(range.Start);
+        MoveCaretAfterEdit(range.Start, CaretAffinity.Downstream);
         MarkModified();
         SchedulePagination();
     }
@@ -253,7 +287,7 @@ public sealed class EditorViewModel
             return;
         }
 
-        MoveCaretAfterEdit(offset);
+        MoveCaretAfterEdit(offset, CaretAffinity.Downstream);
         MarkModified();
         SchedulePagination();
     }
@@ -294,9 +328,9 @@ public sealed class EditorViewModel
     // Depois de uma edição o layout na tela ainda é o de antes, então a coluna alvo calculada
     // agora descreveria uma geometria que já não existe. Marca para recalcular quando o layout
     // novo chegar; até lá a barra fica na posição antiga, por um quadro.
-    private void MoveCaretAfterEdit(int offset)
+    private void MoveCaretAfterEdit(int offset, CaretAffinity affinity)
     {
-        _caret = new Caret(offset, 0.0);
+        _caret = new Caret(offset, 0.0, affinity);
         _caretColumnStale = true;
     }
 
@@ -449,7 +483,10 @@ public sealed class EditorViewModel
 
         if (_caretColumnStale)
         {
-            _caret = CaretNavigator.At(_caret.Offset, paginated, _measurer);
+            // Com a afinidade que a edição escolheu, não com a padrão: é ela que decide de que
+            // lado de uma quebra por largura o caret é desenhado, e o layout novo é a primeira
+            // oportunidade de resolvê-la contra as linhas de verdade.
+            _caret = CaretNavigator.At(_caret.Offset, paginated, _measurer, _caret.Affinity);
             _caretColumnStale = false;
         }
 

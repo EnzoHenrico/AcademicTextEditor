@@ -94,6 +94,36 @@ public static class CaretGeometry
         return line.Runs[^1].SourceEnd;
     }
 
+    /// <summary>O offset é o fim de uma linha e o começo da seguinte?</summary>
+    /// <remarks>
+    /// Só acontece em quebra por largura: o espaço em que a linha quebrou fica com a linha de
+    /// cima, então as duas compartilham o offset — uma posição no buffer, duas na tela. Numa
+    /// quebra explícita o <c>\n</c> ocupa uma posição entre elas e não há empate.
+    /// <para>
+    /// É o que distingue a quebra que o autor escreveu da que a margem impôs, e por isso decide
+    /// quantos <c>\n</c> um Enter precisa inserir ali para abrir uma linha em branco visível.
+    /// </para>
+    /// </remarks>
+    public static bool IsSharedBoundary(int offset, PaginatedDocument document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        var (page, line) = FindLine(offset, document);
+
+        if (page < 0)
+        {
+            return false;
+        }
+
+        var (previousPage, previousLine) = PreviousLine(document, page, line);
+
+        return previousPage >= 0
+            && IsShared(
+                document.Pages[page].Lines[line],
+                document.Pages[previousPage].Lines[previousLine],
+                offset);
+    }
+
     /// <summary>
     /// Página e índice da linha que contém <paramref name="offset"/> — a última cujo início não
     /// passou dele, ou a anterior a ela quando a afinidade é
@@ -158,13 +188,16 @@ public static class CaretGeometry
             return (page, line);
         }
 
-        var found = document.Pages[page].Lines[line];
-        var previous = document.Pages[previousPage].Lines[previousLine];
-
-        return found.SourceStart == offset && previous.SourceEnd == offset
+        return IsShared(
+            document.Pages[page].Lines[line],
+            document.Pages[previousPage].Lines[previousLine],
+            offset)
             ? (previousPage, previousLine)
             : (page, line);
     }
+
+    private static bool IsShared(LaidOutLine found, LaidOutLine previous, int offset) =>
+        found.SourceStart == offset && previous.SourceEnd == offset;
 
     internal static (int PageIndex, int LineIndex) PreviousLine(PaginatedDocument document, int page, int line)
     {
