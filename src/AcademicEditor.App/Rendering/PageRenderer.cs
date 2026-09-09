@@ -316,7 +316,15 @@ public static class PageRenderer
 
                 // O motor alinha as linhas pela baseline, não pelo topo: numa linha que mistura
                 // 11pt e 20pt, alinhar pelo topo deixaria os glifos flutuando uns sobre os outros.
-                text.Draw(context, new Point(contentLeftDip + (run.XPt * PtToDip), baselineDip - text.Baseline));
+                //
+                // A subida do sobrescrito é a única coisa que desloca um run em Y, e sai do próprio
+                // estilo para que a tela e o PDF levantem pelo mesmo tanto. A largura não muda, então
+                // caret, seleção e line breaker seguem sem saber que este run é sobrescrito.
+                text.Draw(
+                    context,
+                    new Point(
+                        contentLeftDip + (run.XPt * PtToDip),
+                        baselineDip - (run.Style.BaselineRisePt * PtToDip) - text.Baseline));
             }
         }
     }

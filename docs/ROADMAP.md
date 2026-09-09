@@ -950,9 +950,11 @@ Registrado desta fatia:
 **Objetivo:** o que sai do editor passa a ser um trabalho acadêmico, e não um texto paginado —
 folha numerada, tipografia de norma, PDF, e as extensões de markup que uma tese usa.
 
-Sete fatias, nenhuma com mais de três tópicos. A ordem tem duas dependências reais e o resto é
-independente: a Fatia 2 precisa do preset da Fatia 1 para saber com que fonte desenhar o
-cabeçalho, e a Fatia 7 é a última porque um menu só oferece o que já existe. **O PDF vem logo
+Oito fatias, nenhuma com mais de três tópicos — eram sete, e a 5 se partiu em duas ao ser
+desenhada, porque a metade que leva a nota ao pé da folha precisa de capacidades que o motor não
+tem. A ordem tem duas dependências reais e o resto é independente: a Fatia 2 precisa do preset da
+Fatia 1 para saber com que fonte desenhar o cabeçalho, e a Fatia 7 é a última porque um menu só
+oferece o que já existe. **O PDF vem logo
 depois do cabeçalho de propósito:** ele é a prova da aposta que abriu o projeto — o motor de
 layout nasceu independente de tela —, e deixá-lo para o fim seria descobrir no fim se ela valia.
 Notas de rodapé e sumário fluem para dentro dele depois, sem tocá-lo.
@@ -1237,20 +1239,65 @@ Registrado desta fatia:
   aí o caret pousa na margem esquerda em vez de no centro. É invisível na prática — com o caret na
   linha a marcação é revelada, e aí há runs
 
-### Fatia 5 — Extensões acadêmicas do markup ⬜
+### Fatia 5a — Marcação acadêmica inline ✅
 
-- [ ] Notas de rodapé: a sintaxe, mais o segundo passe do page-breaker
-- [ ] `[@cite]` e `$math$` **parseados e estilizados, não tipografados**
-- [ ] Legendas
+A Fatia 5 se partiu em duas ao ser desenhada, e o corte não foi de conveniência: **a metade de
+baixo precisa de capacidades que o motor não tem**, e a de cima não precisa de nenhuma. O que está
+aqui é o que dá para mostrar exatamente como sairá impresso.
+
+- [x] Sobrescrito no motor: `TextStyle.AsSuperscript()` e `BaselineRisePt`, aplicados pelos
+      **dois** renderizadores — a tela e o PDF
+- [x] `[^id]` — chamada de nota de rodapé, com o identificador sobrescrito
+- [x] `$math$` — fórmula em itálico, que é como uma variável se compõe em texto matemático
 
 **O que "pronto" significa aqui, dito antes de começar**, senão a fatia engole a fase: `$math$` sai
-como run de estilo próprio, não composto — não há quem tipografe TeX no Avalonia, e um compositor
-de fórmulas é uma fase inteira sozinho. `[@cite]` resolve contra um `.bib` simples e sai como
-`(Silva, 2020)`; estilo CSL e lista de referências formatada ficam para depois.
+como run de estilo próprio, **não composto** — não há quem tipografe TeX no Avalonia, e um
+compositor de fórmulas é uma fase inteira sozinho.
 
-**A nota de rodapé é iterativa por natureza:** ela encolhe a altura útil da folha onde cai, o que
-pode empurrar a própria chamada para a folha seguinte, que leva a nota junto. O segundo passe
-precisa de uma regra de parada escrita antes do código.
+Registrado desta fatia:
+
+- **`AcademicMarkup` roda antes do `InlineMarkup`, e não dentro dele.** Aquele é uma máquina de
+  parear delimitadores repetidos; estes são trechos cercados, com abertura e fechamento distintos.
+  Fatiar a linha primeiro e entregar os pedaços de texto comum para lá mantém as duas regras
+  separadas — e é o que faz um `*` dentro de uma fórmula continuar sendo multiplicação
+- **A linha sem notação nenhuma não paga nada.** Um teste de `Contains` antes de tudo, e ela vai
+  direto para quem já cuidava dela: nem varredura de trechos, nem lista, nem substring
+- **A subida do sobrescrito sai do `TextStyle`, não de cada renderizador.** São três leitores — o
+  parser decide o corpo, a tela e o PDF levantam a baseline —, e uma constante em cada lugar seria
+  uma para divergir das outras. O sintoma seria a chamada de nota fora de lugar **só no PDF**, ou
+  só na tela
+- **Custo aceito:** o motor mede a altura da linha pelo corpo do sobrescrito, que é menor, e não
+  sabe da subida. Num corpo 12 o topo do glifo passa ~0,75pt acima da ascendente do texto que o
+  envolve — dentro da folga do entrelinhamento de 1,5, e por isso não vale um campo a mais no
+  `LineMetrics`. Com entrelinhamento simples, encosta
+- **`[@cite]` saiu da fatia, e o motivo é estrutural.** Resolver `[@silva2020]` para `(Silva, 2020)`
+  exige um run cujo **texto exibido é diferente do texto da fonte** — doze caracteres virando
+  catorze. A invariante do `InlineRun` é `Text[i] ↔ SourceStart + i`, e `CaretGeometry.OffsetInRun`
+  mede prefixos em cima dela: clicar numa citação resolvida devolveria um offset errado. Sem
+  resolver, `[@cite]` seria só texto — e mostrar `silva2020` no meio de uma frase como se fosse
+  prosa é a wrongness silenciosa que este projeto evita. Vai junto com a capacidade, na 5b
+- **Pelo mesmo motivo, a nota não é numerada automaticamente.** O que aparece é o próprio
+  identificador: `[^1]` mostra `1`, `[^nota]` mostra `nota`. `¹` não está no arquivo
+
+### Fatia 5b — Notas de rodapé no layout ⬜
+
+- [ ] **Run com texto exibido diferente do texto da fonte**, tratado como unidade indivisível pelo
+      caret — a capacidade que falta, e que destrava tanto a numeração automática das notas quanto
+      `[@cite]` resolvido contra um `.bib` simples
+- [ ] A nota indo para o pé da folha onde está a chamada, com o segundo passe do page-breaker
+- [ ] `[@cite]` resolvido, saindo como `(Silva, 2020)`
+
+**A enumeração de linhas do caret é o que esta fatia tem de retrabalhar.** `CaretGeometry.FindLine`
+acha a linha varrendo `PageLayout.Lines` e pegando "a última cujo `SourceStart` não passou do
+offset" — ou seja, **assume as linhas em ordem crescente de fonte**. Em Markdown as definições
+`[^1]: texto` costumam ficar no fim do arquivo, e a nota é desenhada na folha da **chamada**: aí
+`Pages[2]` termina com um offset do fim do documento e `Pages[3]` recomeça com offsets menores.
+`FindLine` para de funcionar, e com ele o caret, a seleção, o `WordBoundaries` e o hit test — cinco
+consumidores da mesma enumeração.
+
+**A nota também é iterativa por natureza:** ela encolhe a altura útil da folha onde cai, o que pode
+empurrar a própria chamada para a folha seguinte, que leva a nota junto. O segundo passe precisa de
+uma regra de parada escrita antes do código, como a do sumário.
 
 ### Fatia 6 — Sumário automático ⬜
 
@@ -1311,6 +1358,10 @@ Nada aqui está prometido; é estacionamento para não perder a ideia nem inflar
   caret entrar nela mudaria a **altura** do bloco — invariante que o roadmap afirma duas vezes, no
   heading e na marcação inline. Entra com fatia própria e com a decisão emendada por escrito, nunca
   como um item no meio de outra
+- Legendas — vieram da Fase 6, Fatia 5. Sem imagem nem tabela no editor não há o que legendar, e
+  uma legenda hoje seria só um parágrafo centralizado em corpo menor, que a marcação de alinhamento
+  da Fatia 4 já faz. Voltam junto com o que elas descrevem, e aí trazem a numeração automática —
+  que é a parte que o autor não consegue fazer à mão
 - Sublinhado — Markdown não tem sintaxe para ele, e ABNT e APA usam itálico em texto corrido. A
   sintaxe se decide quando o uso aparecer
 - Escape de marcação inline (`\*`), para um asterisco literal dentro de uma frase enfatizada

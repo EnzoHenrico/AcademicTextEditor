@@ -20,7 +20,7 @@ tecla sem engasgar — inclusive num documento de 300 páginas.
 | Linguagem | C# / .NET 10 |
 | Interface | Avalonia UI 12.1.2 — renderização Skia, mesma imagem nos três sistemas |
 | Motor de texto | próprio: piece table, quebra de linha e paginação escritos do zero, sem editor de terceiros por baixo |
-| Testes | xUnit — 375 testes, com o motor testado sem subsistema gráfico |
+| Testes | xUnit — 395 testes, com o motor testado sem subsistema gráfico |
 | Distribuição | executável self-contained (`linux-x64`, `win-x64`): roda sem instalar o .NET |
 
 ## Patch Notes — Fase 5: Mouse e seleção

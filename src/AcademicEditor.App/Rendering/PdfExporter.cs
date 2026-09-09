@@ -142,7 +142,14 @@ public static class PdfExporter
             {
                 if (run.Text.Length > 0)
                 {
-                    canvas.DrawText(run.Text, contentLeft + (float)run.XPt, baseline, FontFor(run.Style), Ink);
+                    // A subida do sobrescrito sai do estilo, e não de uma constante daqui: é o que
+                    // garante que a chamada de nota caia na mesma altura no papel e na tela.
+                    canvas.DrawText(
+                        run.Text,
+                        contentLeft + (float)run.XPt,
+                        baseline - (float)run.Style.BaselineRisePt,
+                        FontFor(run.Style),
+                        Ink);
                 }
             }
         }
