@@ -26,6 +26,7 @@ public static class EditorCommands
     public static readonly CommandId Cut = new("editor.cut");
     public static readonly CommandId Paste = new("editor.paste");
     public static readonly CommandId SelectAll = new("editor.selectAll");
+    public static readonly CommandId CycleAlignment = new("editor.cycleAlignment");
 }
 
 /// <summary>Onde um atalho vale.</summary>

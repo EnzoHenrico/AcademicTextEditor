@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using AcademicEditor.Core.Layout;
+using AcademicEditor.Core.Layout.Model;
 using AcademicEditor.Core.Parsing;
+using AcademicEditor.Core.Parsing.Ast;
 
 using Xunit.Abstractions;
 
@@ -55,4 +57,60 @@ public sealed class LayoutPerformanceTests(ITestOutputHelper output)
             elapsed < CeilingMilliseconds,
             $"paginar {pages} páginas levou {elapsed:N0}ms, além do teto de {CeilingMilliseconds}ms");
     }
+
+    /// <summary>O que a justificação custa, contra a mesma paginação alinhada à esquerda.</summary>
+    /// <remarks>
+    /// Justificar parte cada linha nas fronteiras de branco — uma string por segmento, contra uma
+    /// por run —, e é o preço de manter a invariante do caret sem esticar o texto dentro de um run.
+    /// O número que importa é a razão entre os dois: se ela crescer, é aqui que aparece.
+    /// </remarks>
+    [Fact]
+    public void Justificar_a_tese_inteira_cabe_no_mesmo_teto()
+    {
+        var source = LongDocument.Build();
+        var measurer = new FakeTextMeasurer();
+        var justified = TypographyPreset.Default with { Alignment = TextAlignment.Justify };
+
+        var (leftMs, lines) = Time(source, TypographyPreset.Default, measurer);
+        var (justifiedMs, _) = Time(source, justified, measurer);
+
+        output.WriteLine($"linhas          : {lines:N0}");
+        output.WriteLine($"à esquerda      : {leftMs:N1} ms   ({leftMs * 1000.0 / lines:N2} µs/linha)");
+        output.WriteLine($"justificado     : {justifiedMs:N1} ms   ({justifiedMs * 1000.0 / lines:N2} µs/linha)");
+        output.WriteLine($"custo do passe  : {justifiedMs / leftMs:N2}x");
+
+        Assert.True(
+            justifiedMs < CeilingMilliseconds,
+            $"justificar levou {justifiedMs:N0}ms, além do teto de {CeilingMilliseconds}ms");
+    }
+
+    /// <summary>O melhor de cinco. Máquina compartilhada mede alto, nunca baixo.</summary>
+    /// <remarks>
+    /// Uma passada só dava 15% de variação entre execuções — mais do que a diferença que se quer
+    /// enxergar. O mínimo é o número menos contaminado por outro processo tendo roubado o núcleo, e
+    /// é o que torna a razão entre as duas colunas comparável de uma execução para outra.
+    /// </remarks>
+    private static (double Milliseconds, int Lines) Time(
+        string source,
+        TypographyPreset preset,
+        ITextMeasurer measurer)
+    {
+        // Uma passada fora do relógio, pelo mesmo motivo do teste acima.
+        var paginated = Paginate(source, preset, measurer);
+        var best = double.MaxValue;
+
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            _ = Paginate(source, preset, measurer);
+            stopwatch.Stop();
+
+            best = Math.Min(best, stopwatch.Elapsed.TotalMilliseconds);
+        }
+
+        return (best, paginated.Pages.Sum(page => page.Lines.Count));
+    }
+
+    private static PaginatedDocument Paginate(string source, TypographyPreset preset, ITextMeasurer measurer) =>
+        LayoutEngine.Layout(MarkupParser.Parse(source, preset), PageSettings.A4, measurer, preset: preset);
 }

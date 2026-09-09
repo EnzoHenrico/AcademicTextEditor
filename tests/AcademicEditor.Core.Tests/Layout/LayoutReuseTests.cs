@@ -112,6 +112,40 @@ public sealed class LayoutReuseTests
         AssertSame(LayoutEngine.Layout(MarkupParser.Parse(After), narrow, Measurer, 5), reused);
     }
 
+    /// <summary>
+    /// A mesma identidade, com o documento justificado.
+    /// </summary>
+    /// <remarks>
+    /// O alinhamento é aplicado dentro do <c>LineBreaker</c>, então o bloco sujo é requebrado
+    /// <b>já alinhado</b> enquanto os intocados vêm alinhados de antes. Se as duas metades
+    /// discordassem, a linha requebrada sairia deslocada em relação às vizinhas — e o caret com
+    /// ela. Este é o teste que prova que não discordam.
+    /// </remarks>
+    [Theory]
+    [InlineData("aaa bbb ccc ddd\n\neee fff", "aaa bXbb ccc ddd\n\neee fff", 5)]
+    [InlineData("aa bb cc dd ee ff\n\ngg hh", "aa bb cc dd ee ff\n\ngg hhX", 24)]
+    public void Reaproveitar_devolve_o_mesmo_documento_com_o_texto_justificado(
+        string before,
+        string after,
+        int caret)
+    {
+        var justified = TypographyPreset.Default with { Alignment = TextAlignment.Justify };
+
+        var previous = LayoutEngine.Layout(
+            MarkupParser.Parse(before, justified), Settings, Measurer, caret, preset: justified);
+
+        var reuse = LayoutReuse.Between(before, after, previous);
+        Assert.NotNull(reuse);
+
+        var reused = LayoutEngine.Layout(
+            MarkupParser.Parse(after, justified), Settings, Measurer, caret, reuse, justified);
+
+        var full = LayoutEngine.Layout(
+            MarkupParser.Parse(after, justified), Settings, Measurer, caret, preset: justified);
+
+        AssertSame(full, reused);
+    }
+
     private static void AssertSame(PaginatedDocument expected, PaginatedDocument actual)
     {
         Assert.Equal(expected.RevealedBlock, actual.RevealedBlock);

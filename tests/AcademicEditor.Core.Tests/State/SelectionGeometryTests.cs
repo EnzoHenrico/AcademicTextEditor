@@ -1,6 +1,7 @@
 using AcademicEditor.Core.Layout;
 using AcademicEditor.Core.Layout.Model;
 using AcademicEditor.Core.Parsing;
+using AcademicEditor.Core.Parsing.Ast;
 using AcademicEditor.Core.State;
 using AcademicEditor.Core.Tests.Layout;
 
@@ -135,4 +136,24 @@ public sealed class SelectionGeometryTests
 
     private static PaginatedDocument Layout(string source) =>
         LayoutEngine.Layout(MarkupParser.Parse(source), Settings, Measurer);
+
+    /// <remarks>
+    /// Numa linha centralizada o texto não encosta na margem esquerda. Um destaque que começasse
+    /// em zero marcaria papel em branco antes da primeira letra — e o alinhamento é justamente a
+    /// primeira coisa que faz "origem da linha" deixar de ser o mesmo que "margem".
+    /// </remarks>
+    [Fact]
+    public void O_destaque_de_uma_linha_centralizada_comeca_onde_o_texto_comeca()
+    {
+        var centered = TypographyPreset.Default with { Alignment = TextAlignment.Center };
+        var document = LayoutEngine.Layout(
+            MarkupParser.Parse("abc", centered), Settings, Measurer, preset: centered);
+
+        var line = document.Pages[0].Lines[0];
+        var rects = SelectionGeometry.RectsFor(
+            new Selection(0, new Caret(3, 0.0)), document, Measurer);
+
+        Assert.Equal(line.Runs[0].XPt, Assert.Single(rects).XPt, precision: 9);
+        Assert.True(line.Runs[0].XPt > 0.0, "a linha centralizada devia estar deslocada da margem");
+    }
 }

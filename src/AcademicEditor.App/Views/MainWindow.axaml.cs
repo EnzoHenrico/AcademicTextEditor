@@ -81,6 +81,7 @@ public partial class MainWindow : Window
         _shortcuts.Handle(EditorCommands.Cut, CutAsync);
         _shortcuts.Handle(EditorCommands.Paste, PasteAsync);
         _shortcuts.Handle(EditorCommands.SelectAll, _viewModel.SelectAll);
+        _shortcuts.Handle(EditorCommands.CycleAlignment, _viewModel.CycleAlignment);
 
         // Um save que falha é a falha que mais importa neste programa. Sem isto ela sumiria numa
         // Task descartada e o autor acharia que gravou.
@@ -131,6 +132,13 @@ public partial class MainWindow : Window
             ShortcutScope.Editor,
             Chord(KeyCode.A, ModifierKeys.Control),
             EditorCommands.SelectAll);
+
+        // Ctrl+J percorre os quatro alinhamentos. Escopo Editor: só faz sentido com o texto em
+        // foco, e é uma edição do documento como digitar.
+        registry.Bind(
+            ShortcutScope.Editor,
+            Chord(KeyCode.J, ModifierKeys.Control),
+            EditorCommands.CycleAlignment);
 
         return registry;
     }

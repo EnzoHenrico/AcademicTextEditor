@@ -56,11 +56,17 @@ public readonly record struct HeadingSizes(
 /// <param name="LineSpacing">
 /// Multiplicador da altura natural da linha: 1,0 é entrelinhamento simples, 1,5 é o da ABNT.
 /// </param>
+/// <param name="Alignment">
+/// O alinhamento de um bloco <b>sem marcação</b>. É por isso que não existe marcação para
+/// justificado: com o preset da norma, "sem marcação" já é justificado, e a marcação serve para
+/// sair dele.
+/// </param>
 public sealed record TypographyPreset(
     string FontFamily,
     double BodySizePt,
     HeadingSizes HeadingSizesPt,
-    double LineSpacing)
+    double LineSpacing,
+    TextAlignment Alignment)
 {
     /// <summary>O preset do MVP: fonte do sistema, corpo 11pt, entrelinhamento simples.</summary>
     /// <remarks>
@@ -71,7 +77,8 @@ public sealed record TypographyPreset(
         TextStyle.DefaultFontFamily,
         11.0,
         new HeadingSizes(20.0, 17.0, 14.0, 12.0, 11.0, 11.0),
-        LineSpacing: 1.0);
+        LineSpacing: 1.0,
+        TextAlignment.Left);
 
     /// <summary>ABNT: Times New Roman 12pt, entrelinhamento 1,5.</summary>
     /// <remarks>
@@ -93,7 +100,8 @@ public sealed record TypographyPreset(
         "Times New Roman, Liberation Serif, DejaVu Serif",
         12.0,
         new HeadingSizes(20.0, 17.0, 14.0, 13.0, 12.0, 12.0),
-        LineSpacing: 1.5);
+        LineSpacing: 1.5,
+        TextAlignment.Justify);
 
     /// <summary>Estilo do corpo de texto.</summary>
     public TextStyle Body => new(FontFamily, BodySizePt, FontWeightKind.Normal, Italic: false);
