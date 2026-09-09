@@ -58,6 +58,12 @@ num exportador PDF/CLI depois. A única costura Core↔App é a interface `IText
   delta estrutural da piece list, sem copiar texto.
 - **Unidade interna do layout: pontos (1/72")**. Conversão para DIP (`pt * 96/72`) acontece
   **somente** na camada de renderização — é o que mantém o motor independente de tela.
+- **Reflow incremental por comparação de textos, não por rastreio de edições.** O que mudou sai do
+  prefixo e do sufixo comuns entre o texto publicado e o novo: exato por construção, sobrevive a
+  uma rajada coalescida num layout só, e trata colar/desfazer/refazer sem caso especial. Vale só
+  quando a alteração não cria nem apaga `\n` — aí os blocos são os mesmos um a um e só um é
+  requebrado; qualquer outra coisa pagina do zero. **O motor recusa em vez de arriscar:** offset
+  errado numa linha reaproveitada não quebra o desenho, quebra o caret, longe de onde errou.
 - **Layout roda em background** (`Task.Run`) e publica via `Dispatcher.UIThread.Post`.
   `PaginatedDocument` e filhos são imutáveis: troca de referência atômica, sem locks.
 - **`Render(DrawingContext)` só desenha** — nunca faz I/O nem recalcula layout.

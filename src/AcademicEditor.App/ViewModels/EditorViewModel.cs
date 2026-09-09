@@ -42,6 +42,11 @@ public sealed class EditorViewModel
     private int _requestedGeneration;
     private int _publishedGeneration;
     private PageSettings _pageSettings;
+
+    // O texto que gerou o layout publicado. É contra ele que a próxima paginação descobre o que
+    // mudou — comparar dois textos é exato e dispensa rastrear edição por edição.
+    private string _publishedSource = string.Empty;
+
     private Caret _caret;
     private bool _caretColumnStale = true;
     private DocumentEncoding _encoding = DocumentEncoding.Utf8;
@@ -366,6 +371,10 @@ public sealed class EditorViewModel
         _undo = new UndoRedoStack(_document);
         _encoding = loaded.Encoding;
 
+        // Documento novo: o texto publicado descreve o anterior, e comparar contra ele diria que
+        // "mudou tudo" — ou, pior, que mudou pouco. A paginação seguinte é completa.
+        _publishedSource = string.Empty;
+
         FilePath = path;
         IsModified = false;
         _caret = new Caret(0, 0.0);
@@ -433,13 +442,26 @@ public sealed class EditorViewModel
         var sincePublish = Environment.TickCount64 - _lastPublishedAtMs;
         var delay = (int)Math.Clamp(MaxLatencyMilliseconds - sincePublish, 0, DebounceMilliseconds);
 
-        _ = PaginateAsync(snapshot, settings, caretOffset, generation, delay, cancellation.Token);
+        // O par (texto publicado, layout publicado) é lido aqui, na UI thread, e viaja junto: os
+        // dois são trocados na mesma linha do Publish, então nunca chegam lá descasados.
+        _ = PaginateAsync(
+            snapshot,
+            settings,
+            caretOffset,
+            new Published(_publishedSource, Paginated),
+            generation,
+            delay,
+            cancellation.Token);
     }
+
+    /// <summary>O que foi publicado da última vez: o texto e o layout que saiu dele.</summary>
+    private readonly record struct Published(string Source, PaginatedDocument Document);
 
     private async Task PaginateAsync(
         TextBufferSnapshot snapshot,
         PageSettings settings,
         int caretOffset,
+        Published published,
         int generation,
         int delayMilliseconds,
         CancellationToken cancellationToken)
@@ -451,16 +473,22 @@ public sealed class EditorViewModel
                 await Task.Delay(delayMilliseconds, cancellationToken).ConfigureAwait(false);
             }
 
-            var paginated = await Task.Run(
-                () => LayoutEngine.Layout(
-                    MarkupParser.Parse(snapshot.GetText()),
-                    settings,
-                    _measurer,
-                    caretOffset,
-                    cancellationToken),
+            var laidOut = await Task.Run(
+                () =>
+                {
+                    var source = snapshot.GetText();
+
+                    return (Source: source, Document: LayoutEngine.Layout(
+                        MarkupParser.Parse(source),
+                        settings,
+                        _measurer,
+                        caretOffset,
+                        LayoutReuse.Between(published.Source, source, published.Document),
+                        cancellationToken));
+                },
                 cancellationToken).ConfigureAwait(false);
 
-            Dispatcher.UIThread.Post(() => Publish(paginated, generation));
+            Dispatcher.UIThread.Post(() => Publish(laidOut.Document, laidOut.Source, generation));
         }
         catch (OperationCanceledException)
         {
@@ -468,7 +496,7 @@ public sealed class EditorViewModel
         }
     }
 
-    private void Publish(PaginatedDocument paginated, int generation)
+    private void Publish(PaginatedDocument paginated, string source, int generation)
     {
         // Cancelar não é instantâneo: um layout antigo pode chegar depois de um mais novo já ter
         // sido publicado. A geração é o que impede o documento de andar para trás na tela.
@@ -480,6 +508,7 @@ public sealed class EditorViewModel
         _publishedGeneration = generation;
         _lastPublishedAtMs = Environment.TickCount64;
         Paginated = paginated;
+        _publishedSource = source;
 
         if (_caretColumnStale)
         {

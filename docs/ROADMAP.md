@@ -565,13 +565,61 @@ Decisão que sai daí:
 
 - [x] **Cache de medição de texto** por `(texto, estilo)` — não estava nesta lista, entrou na
       frente porque a medição da Fatia 6 mostrou que era ele, e não o reflow, o primeiro gargalo
-- [ ] Reflow incremental (dirty-range em 3 níveis: parser → line-breaker → page-breaker)
+- [x] **Reflow incremental** — em um nível, não três: a medição mostrou que o parser é de graça
 - [ ] Highlighting em tempo real reaproveitando os `InlineRun` do AST (sem motor separado)
 - [ ] Seleção múltipla (`IReadOnlyList<SelectionRange>`)
 - [ ] Geometria exata do caret via `LaidOutLine.SourceStart` ↔ `TextLayout`
 - [ ] Chords reais registrados (ex: `Ctrl+K, Ctrl+S`)
 - [x] **Culling de páginas fora do viewport no `Render`** — subiu na fila pelo mesmo motivo do
       cache: a medição apontou para ele
+
+### Reflow incremental ✅
+
+Aberta com o sintoma que sobrou depois do culling: "só passo a sentir o delay quando gero uma
+grande quantidade de inputs". Era a repaginação completa a cada tecla — 74ms e ~7MB de lixo, oito
+vezes por segundo enquanto se digita.
+
+A decomposição decidiu o desenho da fatia:
+
+| | |
+|---|---|
+| parser | **0,5 ms** |
+| line breaker + page breaker | **74,3 ms** |
+
+- [x] **O nível de parser do roadmap não existe.** Reparsear o documento inteiro custa meio
+      milissegundo; o custo é construir 16.056 `LaidOutLine` para um documento em que uma linha
+      mudou. Três níveis viraram um
+- [x] **O trecho alterado sai de comparar os dois textos** — prefixo e sufixo comuns —, não de
+      rastrear edições. Exato por construção, sobrevive a uma rajada de teclas coalescida num
+      layout só, e trata colar, desfazer e refazer sem caso especial. Custa ~1ms por megabyte
+- [x] **Só o caso comum entra**: alteração que não cria nem apaga `\n`. Aí os blocos são os mesmos
+      um a um, e só um precisa ser requebrado. Enter, Backspace numa fronteira, colar um parágrafo
+      ou trocar a geometria devolvem `null`, e o motor pagina do zero pelo caminho de sempre
+- [x] Deslocar uma linha reaproveitada custa uma cópia de record — a mesma que o page breaker já
+      paga ao assentá-la numa folha. O que some é o caro: montar chunks, medir cada palavra e
+      alocar o texto dos runs
+- [x] O bloco revelado tem de ser o bloco sujo, antes e depois. Revelar muda a largura da linha,
+      então um caret que atravessa fronteira muda a aparência de dois blocos sem mudar o texto
+      deles — e aí não há o que reaproveitar
+
+**Medido:** uma tecla no meio do documento de 301 páginas passou de **70,7 ms para 11,2 ms**
+(6,3x). O que sobra é o parser, a comparação dos textos e o page breaker reempilhando as 16 mil
+linhas.
+
+Registrado desta fatia:
+
+- **A asserção dos testes não é o ganho, é a identidade**: reaproveitar tem de devolver exatamente
+  o documento que a paginação completa devolveria, linha por linha e offset por offset, em sete
+  cenários. Um reaproveitamento errado não quebra o desenho — quebra o caret, e isso aparece longe
+  de onde errou
+- **Duas testemunhas contam as medições** que chegam ao `ITextMeasurer`: 30 no caminho completo
+  contra 3 no incremental. Sem elas, os testes de identidade passariam comparando a paginação
+  completa com ela mesma
+- **O motor recusa em vez de arriscar.** Toda condição duvidosa devolve `null` e cai no caminho
+  completo, que é código provado — inclusive uma verificação final de que as linhas antigas foram
+  consumidas exatamente até o fim
+- **O page breaker ainda reempilha tudo.** Parar cedo quando uma quebra de página cai na mesma
+  linha de antes ("reflow until resync") é o próximo corte, se 11ms incomodar
 
 ### Culling do desenho ✅
 

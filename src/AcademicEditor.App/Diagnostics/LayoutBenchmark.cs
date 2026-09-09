@@ -103,6 +103,9 @@ public static class LayoutBenchmark
         output.WriteLine($"  ↳ parser          : {parse:N1} ms");
         output.WriteLine($"  ↳ layout          : {layout:N1} ms");
         output.WriteLine(string.Empty);
+        output.WriteLine($"tecla, reflow total : {parse + layout:N1} ms");
+        output.WriteLine($"tecla, incremental  : {Keystroke(source, cache):N1} ms");
+        output.WriteLine(string.Empty);
         output.WriteLine($"medições largura    : {counting.WidthCalls:N0}");
         output.WriteLine($"  distintas         : {counting.DistinctWidths:N0}");
         output.WriteLine($"  repetidas         : {1.0 - ((double)counting.DistinctWidths / counting.WidthCalls):P1} (teto do cache)");
@@ -198,6 +201,24 @@ public static class LayoutBenchmark
         }
 
         File.WriteAllText(path, BuildDocument(Paragraphs, WordsPerParagraph));
+    }
+
+    /// <summary>
+    /// O custo de uma tecla com o reflow incremental: insere um caractere no meio do documento e
+    /// repagina reaproveitando o layout anterior. Inclui o parser, que continua completo.
+    /// </summary>
+    private static double Keystroke(string source, ITextMeasurer measurer)
+    {
+        var caret = source.Length / 2;
+        var previous = LayoutEngine.Layout(MarkupParser.Parse(source), PageSettings.A4, measurer, caret);
+        var edited = source.Insert(caret, "X");
+
+        return TimeOnly(() => LayoutEngine.Layout(
+            MarkupParser.Parse(edited),
+            PageSettings.A4,
+            measurer,
+            caret + 1,
+            LayoutReuse.Between(source, edited, previous)));
     }
 
     private static double TimeOnly(Action work)
