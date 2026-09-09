@@ -950,9 +950,9 @@ Registrado desta fatia:
 **Objetivo:** o que sai do editor passa a ser um trabalho acadêmico, e não um texto paginado —
 folha numerada, tipografia de norma, PDF, e as extensões de markup que uma tese usa.
 
-Oito fatias, nenhuma com mais de três tópicos — eram sete, e a 5 se partiu em duas ao ser
-desenhada, porque a metade que leva a nota ao pé da folha precisa de capacidades que o motor não
-tem. A ordem tem duas dependências reais e o resto é independente: a Fatia 2 precisa do preset da
+Dez fatias, nenhuma com mais de três tópicos — eram sete, e a 5 se partiu em quatro ao ser
+desenhada: cada corte veio de uma premissa do motor que a nota de rodapé quebra, e nenhuma delas
+estava escrita antes de alguém tentar. A ordem tem duas dependências reais e o resto é independente: a Fatia 2 precisa do preset da
 Fatia 1 para saber com que fonte desenhar o cabeçalho, e a Fatia 7 é a última porque um menu só
 oferece o que já existe. **O PDF vem logo
 depois do cabeçalho de propósito:** ele é a prova da aposta que abriu o projeto — o motor de
@@ -1279,25 +1279,85 @@ Registrado desta fatia:
 - **Pelo mesmo motivo, a nota não é numerada automaticamente.** O que aparece é o próprio
   identificador: `[^1]` mostra `1`, `[^nota]` mostra `nota`. `¹` não está no arquivo
 
-### Fatia 5b — Notas de rodapé no layout ⬜
+### Fatia 5b — Índice de linhas em ordem de fonte ✅
 
-- [ ] **Run com texto exibido diferente do texto da fonte**, tratado como unidade indivisível pelo
-      caret — a capacidade que falta, e que destrava tanto a numeração automática das notas quanto
-      `[@cite]` resolvido contra um `.bib` simples
-- [ ] A nota indo para o pé da folha onde está a chamada, com o segundo passe do page-breaker
-- [ ] `[@cite]` resolvido, saindo como `(Silva, 2020)`
+Aberta como "notas de rodapé no layout" e entregue como o que estava embaixo dela. **A ordem de
+desenho e a ordem de fonte eram a mesma coisa até aqui**, e todo o motor se apoiava nisso sem que
+estivesse escrito em lugar nenhum. Separá-las é o pré-requisito da nota de rodapé — e, sozinho, já
+é o índice achatado que a Fatia 4 da Fase 3 previu e adiou.
 
-**A enumeração de linhas do caret é o que esta fatia tem de retrabalhar.** `CaretGeometry.FindLine`
-acha a linha varrendo `PageLayout.Lines` e pegando "a última cujo `SourceStart` não passou do
-offset" — ou seja, **assume as linhas em ordem crescente de fonte**. Em Markdown as definições
-`[^1]: texto` costumam ficar no fim do arquivo, e a nota é desenhada na folha da **chamada**: aí
-`Pages[2]` termina com um offset do fim do documento e `Pages[3]` recomeça com offsets menores.
-`FindLine` para de funcionar, e com ele o caret, a seleção, o `WordBoundaries` e o hit test — cinco
-consumidores da mesma enumeração.
+- [x] `PaginatedDocument.Index` — todas as linhas em **ordem de fonte**, construído no próprio
+      construtor porque esquecer de construí-lo não daria erro, daria um caret que não acha onde
+      pousar
+- [x] `CaretGeometry.FindLine` por **busca binária** sobre ele, no lugar da varredura das folhas
+- [x] `PageLayout.Lines` passa a ser oficialmente **ordem de desenho**, e o índice é a visão por
+      ordem de fonte
 
-**A nota também é iterativa por natureza:** ela encolhe a altura útil da folha onde cai, o que pode
-empurrar a própria chamada para a folha seguinte, que leva a nota junto. O segundo passe precisa de
-uma regra de parada escrita antes do código, como a do sumário.
+**Medido**, no documento de 300 páginas e 10.668 linhas, no pior caso da varredura — o último
+offset do documento, com tudo antes dele para andar:
+
+| | |
+|---|---|
+| por busca | **0,25 µs** |
+| passos | **~14**, contra 10.668 da varredura |
+
+Registrado desta fatia:
+
+- **A correção que abriu a fatia.** A 5a registrou que o "run com texto exibido diferente do da
+  fonte" destravava os outros dois itens. **Está errado para a nota no pé da folha:** o texto da
+  definição é literal, e aquela capacidade destrava só a *numeração automática* e o `[@cite]`
+  resolvido. Levar a nota ao pé da folha depende disto aqui, não daquilo
+- **Os 369 testes existentes passaram sem uma linha alterada**, e é a prova de equivalência que a
+  troca precisava: a busca binária devolve a mesma linha que a varredura devolvia, incluindo os
+  empates das linhas vazias — que o desempate por posição na folha preserva
+- **A ordenação só acontece quando as duas ordens divergem**, que hoje é nunca: o passeio pelas
+  folhas já sai ordenado, e conferir isso custa uma comparação por linha. Quando a nota chegar, é
+  esse ramo que passa a valer
+- **`with { Pages = ... }` não refaz o índice** — a cópia de record copia campos, não reexecuta
+  inicializadores. É seguro no `PageBands`, que só acrescenta faixas às folhas sem tocar nas
+  linhas, e está escrito no tipo para o próximo não descobrir do jeito difícil
+
+### Fatia 5c — Notas de rodapé no pé da folha ⬜
+
+O desenho saiu inteiro ao projetar a 5b, e fica escrito para não ser redescoberto:
+
+- [ ] `[^id]: texto` como bloco próprio, fora do fluxo; **definição nunca chamada continua sendo
+      parágrafo comum**, no lugar onde foi escrita — nenhum texto pode sumir da tela
+- [ ] Reserva da altura das notas na folha, e as linhas delas assentadas no pé da área de conteúdo,
+      abaixo de um filete
+- [ ] `LayoutReuse` andando pelo índice, para o reflow incremental continuar valendo
+
+**A reserva não precisa de laço de convergência, e essa foi a boa surpresa.** A altura de uma nota
+é conhecida *antes* de a linha que a chama ser assentada — basta quebrar as definições primeiro. O
+page breaker decide com antecedência: se a linha **mais** as notas que ela estreia não cabem no que
+resta, as duas descem juntas para a folha seguinte. O ponto fixo que o roadmap temia era do desenho
+antigo, em que a nota era descoberta depois de a linha já estar posta.
+
+**O que ainda não estava desenhado, e é o motivo desta fatia existir separada:** `LayoutEngine.Reuse`
+achata as folhas com `SelectMany(page => page.Lines)`, que é **ordem de desenho**, e casa esse
+achatado um-para-um com os blocos do documento, que estão em **ordem de fonte**. Com a nota no pé
+da folha as duas deixam de coincidir, e o reaproveitamento passa a mapear bloco errado para linha
+errada — que não quebra o desenho, quebra o caret. Passar a andar pelo `Index` resolve, e é
+trabalho de verdade: sem ele, digitar num documento com notas repaginaria do zero a cada tecla.
+
+### Fatia 5d — Numeração automática e `[@cite]` resolvido ⬜
+
+- [ ] Run com **texto exibido diferente do texto da fonte**, tratado como unidade indivisível pelo
+      caret — `InlineRun` e `LaidOutRun` ganham `SourceLength`, e `ColumnPt`, `OffsetInRun`,
+      as setas e o `WordBoundaries` passam a resolver para as pontas
+- [ ] `[^abc]` aparecendo como `¹`, numerado por ordem de chamada
+- [ ] `[@silva2020]` resolvido contra um `.bib` simples, saindo como `(Silva, 2020)`
+
+**A capacidade que falta tem nome:** hoje a invariante do `InlineRun` é `Text[i] ↔ SourceStart + i`,
+e `CaretGeometry.OffsetInRun` mede prefixos em cima dela. Doze caracteres virando catorze fazem
+clicar numa citação resolvida devolver um offset errado. O run sintético é a mesma ideia do
+marcador de bloco `\page`, um nível abaixo: **atômico, o caret pousa nas pontas e as teclas de
+apagar o tratam como unidade**.
+
+**E ele precisa de um terceiro estado de visibilidade.** Hoje um run ou é marcação (some quando o
+caret sai do bloco) ou é texto (fica sempre). A numeração pede o inverso do primeiro: um run que
+aparece **só quando a marcação está escondida** — revelado, o autor vê `[^abc]`; escondido, vê `¹`.
+O `IsMarkup` booleano vira três estados.
 
 ### Fatia 6 — Sumário automático ⬜
 

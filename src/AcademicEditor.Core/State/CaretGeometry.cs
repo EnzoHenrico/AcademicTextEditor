@@ -108,20 +108,11 @@ public static class CaretGeometry
     {
         ArgumentNullException.ThrowIfNull(document);
 
-        var (page, line) = FindLine(offset, document);
+        var position = FindLineIndex(offset, document);
 
-        if (page < 0)
-        {
-            return false;
-        }
-
-        var (previousPage, previousLine) = PreviousLine(document, page, line);
-
-        return previousPage >= 0
-            && IsShared(
-                document.Pages[page].Lines[line],
-                document.Pages[previousPage].Lines[previousLine],
-                offset);
+        return position > 0
+            && document.Index[position].SourceStart == offset
+            && document.Index[position - 1].SourceEnd == offset;
     }
 
     /// <summary>
@@ -129,75 +120,80 @@ public static class CaretGeometry
     /// passou dele, ou a anterior a ela quando a afinidade é
     /// <see cref="CaretAffinity.Upstream"/> e as duas dividem o offset.
     /// </summary>
-    /// <remarks>
-    /// Varredura linear com saída antecipada. As linhas estão em ordem de fonte, então o custo é
-    /// proporcional ao que existe <i>antes</i> do caret, não ao documento inteiro. Um índice
-    /// achatado tornaria isto O(log n); entra quando o profiling pedir, não antes.
-    /// </remarks>
     internal static (int PageIndex, int LineIndex) FindLine(
         int offset,
         PaginatedDocument document,
         CaretAffinity affinity = CaretAffinity.Downstream)
     {
-        var bestPage = -1;
-        var bestLine = -1;
-        var previousPage = -1;
-        var previousLine = -1;
+        var position = FindLineIndex(offset, document);
 
-        for (var page = 0; page < document.Pages.Count; page++)
+        if (position < 0)
         {
-            var lines = document.Pages[page].Lines;
+            return (-1, -1);
+        }
 
-            for (var index = 0; index < lines.Count; index++)
+        var found = document.Index[Resolve(position, offset, document, affinity)];
+
+        return (found.PageIndex, found.LineIndex);
+    }
+
+    /// <summary>
+    /// Posição no <see cref="PaginatedDocument.Index"/> da linha que contém o offset, ou -1 num
+    /// documento sem linha alguma.
+    /// </summary>
+    /// <remarks>
+    /// <b>Busca binária sobre o índice em ordem de fonte</b>, e não mais varredura das folhas. A
+    /// varredura custava proporcional ao que existia antes do caret e dependia de as linhas
+    /// estarem em ordem de fonte dentro das folhas — premissa que a nota de rodapé quebra, porque
+    /// ela é desenhada na folha da chamada e escrita onde o autor quis.
+    /// </remarks>
+    internal static int FindLineIndex(int offset, PaginatedDocument document)
+    {
+        var index = document.Index;
+
+        if (index.Count == 0)
+        {
+            return -1;
+        }
+
+        var low = 0;
+        var high = index.Count - 1;
+        var best = -1;
+
+        while (low <= high)
+        {
+            var mid = low + ((high - low) / 2);
+
+            if (index[mid].SourceStart <= offset)
             {
-                if (lines[index].SourceStart > offset)
-                {
-                    // Offset antes da primeira linha do documento (o "# " de um heading inicial):
-                    // o caret pousa nessa primeira linha.
-                    return bestPage < 0
-                        ? (page, index)
-                        : Resolve(document, bestPage, bestLine, previousPage, previousLine, offset, affinity);
-                }
-
-                previousPage = bestPage;
-                previousLine = bestLine;
-                bestPage = page;
-                bestLine = index;
+                best = mid;
+                low = mid + 1;
+            }
+            else
+            {
+                high = mid - 1;
             }
         }
 
-        return bestPage < 0
-            ? (bestPage, bestLine)
-            : Resolve(document, bestPage, bestLine, previousPage, previousLine, offset, affinity);
+        // Offset antes da primeira linha do documento — o "# " de um heading inicial, com a
+        // marcação escondida. O caret pousa nessa primeira linha.
+        return best < 0 ? 0 : best;
     }
 
     // A linha achada começa exatamente onde a anterior terminou? Então o offset serve às duas, e
     // quem escolhe é a afinidade. Só acontece em quebra por largura: numa quebra explícita o \n
     // ocupa uma posição entre elas e não há empate.
-    private static (int PageIndex, int LineIndex) Resolve(
-        PaginatedDocument document,
-        int page,
-        int line,
-        int previousPage,
-        int previousLine,
+    private static int Resolve(
+        int position,
         int offset,
-        CaretAffinity affinity)
-    {
-        if (affinity != CaretAffinity.Upstream || previousPage < 0)
-        {
-            return (page, line);
-        }
-
-        return IsShared(
-            document.Pages[page].Lines[line],
-            document.Pages[previousPage].Lines[previousLine],
-            offset)
-            ? (previousPage, previousLine)
-            : (page, line);
-    }
-
-    private static bool IsShared(LaidOutLine found, LaidOutLine previous, int offset) =>
-        found.SourceStart == offset && previous.SourceEnd == offset;
+        PaginatedDocument document,
+        CaretAffinity affinity) =>
+        affinity == CaretAffinity.Upstream
+        && position > 0
+        && document.Index[position].SourceStart == offset
+        && document.Index[position - 1].SourceEnd == offset
+            ? position - 1
+            : position;
 
     internal static (int PageIndex, int LineIndex) PreviousLine(PaginatedDocument document, int page, int line)
     {
