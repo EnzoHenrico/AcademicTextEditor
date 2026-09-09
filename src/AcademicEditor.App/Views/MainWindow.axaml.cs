@@ -20,6 +20,11 @@ public partial class MainWindow : Window
         Patterns = ["*.md", "*.markdown", "*.txt"],
     };
 
+    private static readonly FilePickerFileType PdfFiles = new("PDF")
+    {
+        Patterns = ["*.pdf"],
+    };
+
     // O programa é todo em português; formatar "1,234 palavras" no meio dele estaria errado, e
     // depender da cultura da máquina faria o mesmo texto sair diferente em cada uma delas.
     private static readonly CultureInfo Numbers = CultureInfo.GetCultureInfo("pt-BR");
@@ -71,6 +76,7 @@ public partial class MainWindow : Window
         _shortcuts.Handle(EditorCommands.Save, SaveAsync);
         _shortcuts.Handle(EditorCommands.SaveAs, SaveAsAsync);
         _shortcuts.Handle(EditorCommands.Open, OpenAsync);
+        _shortcuts.Handle(EditorCommands.ExportPdf, ExportPdfAsync);
         _shortcuts.Handle(EditorCommands.Copy, CopyAsync);
         _shortcuts.Handle(EditorCommands.Cut, CutAsync);
         _shortcuts.Handle(EditorCommands.Paste, PasteAsync);
@@ -98,6 +104,14 @@ public partial class MainWindow : Window
             Chord(KeyCode.S, ModifierKeys.Control | ModifierKeys.Shift),
             EditorCommands.SaveAs);
         registry.Bind(ShortcutScope.Global, Chord(KeyCode.O, ModifierKeys.Control), EditorCommands.Open);
+
+        // Ctrl+P: é o que a mão procura para produzir um PDF, e não disputa com nada. Este programa
+        // não imprime nem vai imprimir — o PDF É o caminho da impressão, e um segundo atalho para
+        // a mesma coisa só faria o autor escolher entre dois nomes do mesmo botão.
+        registry.Bind(
+            ShortcutScope.Global,
+            Chord(KeyCode.P, ModifierKeys.Control),
+            EditorCommands.ExportPdf);
         registry.Bind(ShortcutScope.Editor, Chord(KeyCode.Z, ModifierKeys.Control), EditorCommands.Undo);
         registry.Bind(ShortcutScope.Editor, Chord(KeyCode.Y, ModifierKeys.Control), EditorCommands.Redo);
 
@@ -194,6 +208,35 @@ public partial class MainWindow : Window
 
         await _viewModel.SaveAsAsync(path).ConfigureAwait(true);
         UpdateDocumentState();
+    }
+
+    /// <summary>Exporta o documento paginado como PDF, perguntando onde gravar.</summary>
+    /// <remarks>
+    /// O nome sugerido acompanha o do documento: exportar <c>tese.md</c> propõe <c>tese.pdf</c>, na
+    /// mesma pasta. Sem arquivo aberto, propõe um nome genérico em vez de recusar — o documento
+    /// paginado existe desde a primeira tecla, e não há razão para o PDF depender de já ter sido
+    /// salvo em disco.
+    /// </remarks>
+    private async Task ExportPdfAsync()
+    {
+        var suggested = _viewModel.FilePath is { } path
+            ? Path.GetFileNameWithoutExtension(path) + ".pdf"
+            : "documento.pdf";
+
+        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Exportar PDF",
+            DefaultExtension = "pdf",
+            SuggestedFileName = suggested,
+            FileTypeChoices = [PdfFiles],
+        }).ConfigureAwait(true);
+
+        if (file?.TryGetLocalPath() is not { } target)
+        {
+            return;
+        }
+
+        await _viewModel.ExportPdfAsync(target).ConfigureAwait(true);
     }
 
     private async Task OpenAsync()
