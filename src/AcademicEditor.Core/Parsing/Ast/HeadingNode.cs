@@ -5,7 +5,7 @@ namespace AcademicEditor.Core.Parsing.Ast;
 /// </summary>
 /// <remarks>
 /// O estilo já vem resolvido nos <see cref="BlockNode.Runs"/>; <see cref="Level"/> permanece
-/// porque é informação semântica, não visual — é dela que o sumário automático (Fase 5) vive.
+/// porque é informação semântica, não visual — é dela que o sumário automático (Fase 6) vive.
 /// </remarks>
 public sealed class HeadingNode : BlockNode
 {

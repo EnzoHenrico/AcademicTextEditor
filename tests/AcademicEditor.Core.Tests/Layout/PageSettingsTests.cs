@@ -29,7 +29,7 @@ public sealed class PageSettingsTests
         Assert.Equal(50.0, settings.ContentTopPt);
     }
 
-    // Cabeçalho e rodapé são Fase 5, mas o espaço que reservam já sai da altura útil: é o que
+    // Cabeçalho e rodapé são Fase 6, mas o espaço que reservam já sai da altura útil: é o que
     // evita repaginar o motor inteiro quando eles entrarem.
     [Fact]
     public void Espaco_reservado_para_cabecalho_e_rodape_sai_da_altura_util()

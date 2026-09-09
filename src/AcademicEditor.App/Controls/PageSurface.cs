@@ -1,6 +1,7 @@
 using AcademicEditor.App.Rendering;
 using AcademicEditor.App.ViewModels;
 
+using AcademicEditor.Core.Layout;
 using AcademicEditor.Core.State;
 
 using Avalonia;
@@ -25,11 +26,17 @@ public sealed class PageSurface : Control
     // macOS ~500, então qualquer um dos três passa por "normal" nas três plataformas.
     private static readonly TimeSpan BlinkInterval = TimeSpan.FromMilliseconds(530.0);
 
+    // Dois cursores construídos uma vez, não um por movimento do mouse: OnPointerMoved dispara
+    // dezenas de vezes por segundo, e cada Cursor novo é um recurso do sistema gráfico.
+    private static readonly Cursor TextCursor = new(StandardCursorType.Ibeam);
+    private static readonly Cursor ArrowCursor = new(StandardCursorType.Arrow);
+
     private readonly DispatcherTimer _blinkTimer;
 
     private EditorViewModel? _viewModel;
     private ScrollViewer? _scroller;
     private bool _caretVisible = true;
+    private bool _dragging;
     private CaretPosition? _scrolledTo;
 
     public PageSurface()
@@ -79,7 +86,13 @@ public sealed class PageSurface : Control
         // iria para outro lugar.
         var caret = IsFocused && _caretVisible ? _viewModel.CaretPosition : (CaretPosition?)null;
 
-        PageRenderer.Render(context, _viewModel.Paginated, Bounds.Width, caret, Viewport);
+        PageRenderer.Render(
+            context,
+            _viewModel.Paginated,
+            Bounds.Width,
+            caret,
+            Viewport,
+            _viewModel.SelectionRects);
     }
 
     /// <summary>
@@ -125,6 +138,8 @@ public sealed class PageSurface : Control
             return;
         }
 
+        var extend = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+
         switch (e.Key)
         {
             case Key.Back:
@@ -144,43 +159,46 @@ public sealed class PageSurface : Control
 
             // Navegação: o controle só traduz a tecla numa chamada ao Core. Decidir para onde o
             // caret vai depende do documento paginado, que é do Core — e é lá que isso é testado.
+            //
+            // Shift não é um movimento diferente: é o mesmo movimento sem recolher a âncora. Por
+            // isso ele entra como parâmetro, e não como oito casos a mais neste switch.
             case Key.Left:
-                _viewModel.MoveCaretLeft();
+                _viewModel.MoveCaretLeft(extend);
                 e.Handled = true;
                 break;
 
             case Key.Right:
-                _viewModel.MoveCaretRight();
+                _viewModel.MoveCaretRight(extend);
                 e.Handled = true;
                 break;
 
             case Key.Up:
-                _viewModel.MoveCaretUp();
+                _viewModel.MoveCaretUp(extend);
                 e.Handled = true;
                 break;
 
             case Key.Down:
-                _viewModel.MoveCaretDown();
+                _viewModel.MoveCaretDown(extend);
                 e.Handled = true;
                 break;
 
             case Key.Home:
-                _viewModel.MoveCaretToLineStart();
+                _viewModel.MoveCaretToLineStart(extend);
                 e.Handled = true;
                 break;
 
             case Key.End:
-                _viewModel.MoveCaretToLineEnd();
+                _viewModel.MoveCaretToLineEnd(extend);
                 e.Handled = true;
                 break;
 
             case Key.PageUp:
-                _viewModel.MoveCaretPageUp();
+                _viewModel.MoveCaretPageUp(extend);
                 e.Handled = true;
                 break;
 
             case Key.PageDown:
-                _viewModel.MoveCaretPageDown();
+                _viewModel.MoveCaretPageDown(extend);
                 e.Handled = true;
                 break;
 
@@ -189,6 +207,97 @@ public sealed class PageSurface : Control
                 break;
         }
     }
+
+    // O clique é a segunda forma de mover o caret, ao lado das setas — e, como elas, o controle
+    // só traduz o evento numa chamada ao Core: decidir onde o caret pousa depende do documento
+    // paginado, e é lá que isso é testado.
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+
+        if (_viewModel is null || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            return;
+        }
+
+        // Clicar no texto tem de dar o foco de volta: sem isto, um clique depois de mexer na
+        // barra de rolagem punha o caret sem que a tecla seguinte chegasse aqui.
+        Focus();
+
+        if (PageRenderer.HitTest(_viewModel.Paginated, e.GetPosition(this), Bounds.Width) is not { } hit)
+        {
+            return;
+        }
+
+        // Um clique põe o caret, dois pegam a palavra, três a linha visual. Shift no clique
+        // estende a seleção a partir da âncora, como em qualquer editor.
+        switch (e.ClickCount)
+        {
+            case 1:
+                _viewModel.PlaceCaretAt(
+                    hit.PageIndex, hit.XPt, hit.YPt, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
+                break;
+
+            case 2:
+                _viewModel.SelectWordAt(hit.PageIndex, hit.XPt, hit.YPt);
+                break;
+
+            default:
+                _viewModel.SelectLineAt(hit.PageIndex, hit.XPt, hit.YPt);
+                break;
+        }
+
+        // Captura para que o arrasto continue chegando aqui mesmo quando o ponteiro sai da
+        // superfície — soltar o botão fora da janela tem de terminar a seleção, não abandoná-la.
+        _dragging = true;
+        e.Pointer.Capture(this);
+        e.Handled = true;
+    }
+
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        base.OnPointerReleased(e);
+
+        if (_dragging)
+        {
+            _dragging = false;
+            e.Pointer.Capture(null);
+        }
+    }
+
+    // Cursor por região: barra de texto sobre o papel, seta sobre a margem e sobre o vão entre
+    // folhas. Custa uma divisão e duas subtrações por movimento — nenhuma medição de texto — e dá
+    // ao autor uma leitura visual de onde a margem está.
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
+
+        if (_viewModel is null
+            || PageRenderer.HitTest(_viewModel.Paginated, e.GetPosition(this), Bounds.Width) is not { } hit)
+        {
+            return;
+        }
+
+        Cursor = IsOverContent(hit, _viewModel.Paginated.Settings) ? TextCursor : ArrowCursor;
+
+        // Arrastando: o ponto vira a ponta ativa da seleção, e a âncora fica onde o botão desceu.
+        if (_dragging)
+        {
+            _viewModel.PlaceCaretAt(hit.PageIndex, hit.XPt, hit.YPt, extend: true);
+        }
+    }
+
+    /// <summary>O ponto está dentro da área de conteúdo da folha, e não na margem nem no vão?</summary>
+    /// <remarks>
+    /// Lê o resultado <b>cru</b> do <c>HitTest</c>, que não grampeia: é justamente o sinal fora do
+    /// intervalo que distingue o papel da margem. Grampear lá tornaria esta pergunta impossível de
+    /// responder sem refazer a conta.
+    /// </remarks>
+    private static bool IsOverContent((int PageIndex, double XPt, double YPt) hit, PageSettings settings) =>
+        hit.XPt >= 0.0
+        && hit.XPt <= settings.ContentWidthPt
+        && hit.YPt >= 0.0
+        && hit.YPt <= settings.ContentHeightPt;
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
@@ -213,6 +322,7 @@ public sealed class PageSurface : Control
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         _blinkTimer.Stop();
+        _dragging = false;
 
         if (_scroller is not null)
         {

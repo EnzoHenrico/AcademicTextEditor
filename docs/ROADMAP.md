@@ -57,7 +57,7 @@ com o Core vazio é trivial; depois de 40 arquivos de motor, é refatoração ca
 
 ---
 
-## Fase 3 — MVP 🔨
+## Fase 3 — MVP ✅
 
 **Objetivo:** abrir um `.md`, editar, ver a paginação recalcular, salvar, reabrir e obter o
 mesmo conteúdo. É aqui que o diferencial do produto (paginação como layout) fica de pé.
@@ -505,7 +505,7 @@ Registrado desta fatia:
   sem ter proposto a alternativa antes
 
 ### Fatia 6 — Fechamento da fase
-- [ ] Teste manual end-to-end via `./dev.sh run`
+- [x] Teste manual end-to-end via `./dev.sh run`
 - [x] Documento longo (~300 páginas) para medir latência de repaginação e decidir se o
       reflow incremental precisa ser antecipado da Fase 4
 
@@ -561,17 +561,33 @@ Decisão que sai daí:
 
 ---
 
-## Fase 4 — Editor de verdade 🔨
+## Fase 4 — Desempenho com documento longo ✅
+
+**A fase mudou de nome porque mudou de assunto.** Abriu chamada "Editor de verdade", com quatro
+itens de editor e nenhum de desempenho; foi inteiramente consumida pelo que a medição da Fatia 6
+apontou, e as quatro fatias entregues são as quatro que aquele número pediu — cache de medição,
+reflow incremental, culling do desenho e coalescer a repaginação. O commit de merge já a chamava
+assim. O nome novo é o que ela é; os itens de editor que sobraram foram para onde pertencem, e
+estão na tabela abaixo.
 
 - [x] **Cache de medição de texto** por `(texto, estilo)` — não estava nesta lista, entrou na
       frente porque a medição da Fatia 6 mostrou que era ele, e não o reflow, o primeiro gargalo
 - [x] **Reflow incremental** — em um nível, não três: a medição mostrou que o parser é de graça
-- [ ] Highlighting em tempo real reaproveitando os `InlineRun` do AST (sem motor separado)
-- [ ] Seleção múltipla (`IReadOnlyList<SelectionRange>`)
-- [ ] Geometria exata do caret via `LaidOutLine.SourceStart` ↔ `TextLayout`
-- [ ] Chords reais registrados (ex: `Ctrl+K, Ctrl+S`)
 - [x] **Culling de páginas fora do viewport no `Render`** — subiu na fila pelo mesmo motivo do
       cache: a medição apontou para ele
+- [x] **Digitação: coalescer a repaginação em vez de cancelá-la** — o único dos quatro que não
+      saiu de um número, e sim de abrir o app e segurar uma tecla
+- [x] Geometria exata do caret via `LaidOutLine.SourceStart` ↔ `TextLayout` — **satisfeita desde
+      a Fatia 4 da Fase 3**, e o registro dela já dizia isso: medir o prefixo do run dá a posição
+      exata, e foi assim que ela nasceu
+
+Os três itens de editor que restavam:
+
+| item | destino | por quê |
+|---|---|---|
+| Highlighting em tempo real reaproveitando os `InlineRun` do AST | Fase 5, Fatia 4 | é a mesma máquina: marcação inline é o parser emitindo runs de estilos diferentes, que é o que "highlighting sem motor separado" quer dizer |
+| Seleção múltipla (`IReadOnlyList<SelectionRange>`) | estacionamento de ideias | a Fase 5 faz **uma** seleção. Multi-cursor é feature de code editor, e a lista plural custaria indireção em cada tecla, cada desenho e cada edição por algo que talvez nunca venha |
+| Chords reais registrados (ex: `Ctrl+K, Ctrl+S`) | estacionamento de ideias | `KeyBindingRegistry` já suporta N passos desde a Fatia 5 e tem teste; o que falta não é máquina, é um comando que queira um chord |
 
 ### Reflow incremental ✅
 
@@ -753,7 +769,182 @@ Registrado desta fatia:
 
 ---
 
-## Fase 5 — Documento acadêmico ⬜
+## Fase 5 — Mouse e seleção ✅
+
+**Objetivo:** o editor passa a responder ao mouse e a ter seleção. São as quatro coisas que
+separam "protótipo que se digita" de "editor que se usa": pôr o caret com um clique, selecionar
+com o mouse e com o teclado, recortar/copiar/colar, e ver negrito e itálico formatados.
+
+Como na Fase 3, em fatias verticais. A ordem não é arbitrária: a Fatia 1 constrói a entrada por
+ponto, de que a Fatia 2 precisa para arrastar; a Fatia 2 constrói a seleção, de que a Fatia 3
+precisa para copiar. A Fatia 4 é independente das outras três e podia vir em qualquer lugar.
+
+### Fatia 1 — Ponteiro: caret por clique e cursor de texto ✅
+
+- [x] `CaretNavigator.AtPoint(pageIndex, xPt, yPt, …)` — o caminho que faltava. Todo movimento
+      até aqui partia de um caret e chegava a outro; não havia como **entrar** por um ponto da
+      folha
+- [x] O ponto chega em pontos, relativo ao canto da área de conteúdo — a mesma convenção que
+      `CaretPosition` devolve, e é o que torna isto o inverso exato de `CaretGeometry.Locate`
+- [x] **Todo clique pousa em algum lugar.** Acima da primeira linha e abaixo da última, nos
+      extremos da folha; à esquerda e à direita da margem, nos extremos da linha; numa folha sem
+      linha alguma, na vizinha com conteúdo — para trás primeiro, porque o caret pertence ao texto
+      que a quebra encerrou, não ao que ainda não começou
+- [x] Marcador de bloco recebe o caret no início, como as setas já faziam pelo `Stop()`
+- [x] `PageRenderer.HitTest` — o inverso de `CaretRectDip`, ao lado dele, pelo motivo que aquele
+      método já documenta: a soma de vão, origem da folha e margem recalculada em outro arquivo é
+      como as duas contas divergem uma da outra depois. A folha sai por aritmética, não por
+      varredura — a mesma divisão pelo passo que o culling usa
+- [x] Cursor I-beam dentro da área de conteúdo, seta na margem e no vão entre folhas
+- [x] `AtPoint` é o inverso de `Locate`, verificado como propriedade: ir e voltar devolve o mesmo
+      offset em **toda** posição que uma linha cobre, nas duas afinidades, em três documentos
+
+Registrado desta fatia:
+
+- **O grampeamento tem um dono só, e é o Core.** `HitTest` devolve o ponto **cru** — `YPt`
+  negativo acima do texto, `XPt` maior que a largura útil à direita da margem — e é `AtPoint` que
+  o traz para dentro. Foi o que permitiu a regra "todo clique pousa em algum lugar" ter teste sem
+  subsistema gráfico, e é também o que faz o cursor funcionar: o sinal fora do intervalo é
+  exatamente o que distingue o papel da margem, e grampear no renderizador tornaria essa pergunta
+  impossível de responder sem refazer a conta
+- **Folha sem linha alguma o parser já não produz.** Desde que o `\page` passou a ocupar uma linha
+  desenhada (Fatia 5.1 da Fase 3), toda folha tem ao menos o marcador — a ressalva que
+  `CaretGeometry.PreviousLine` carrega no comentário está desatualizada quanto à rota, não quanto
+  à regra. O caso continua tratado e continua testado, com o documento montado à mão
+- **O quarto argumento para `tests/AcademicEditor.App.Tests/`, e o primeiro com asserção óbvia.**
+  `HitTest(CaretRectDip(c)) == c` é uma propriedade de uma linha que pegaria um sinal trocado na
+  hora, e não tem onde morar: `PageRenderer` depende de `Rect` do Avalonia e `Core.Tests` não
+  referencia o App. O que dá para testar do lado do Core — o round-trip `AtPoint`/`Locate` — está
+  testado; o que sobra é a conversão DIP↔pt, verificada à mão
+
+### Fatia 2 — Seleção: mouse e teclado ✅
+
+- [x] `Selection(Anchor, Caret)` no Core. Âncora é offset nu; a ponta ativa é um `Caret` inteiro,
+      porque ela **é** o caret — com afinidade e coluna alvo, que é do que a seta seguinte precisa
+- [x] **O ViewModel guarda a seleção, não o caret.** `Caret` virou `_selection.Active`: um caret e
+      uma seleção em campos separados seriam dois estados para a mesma coisa, e o dia em que
+      divergissem o texto apagado não seria o texto destacado
+- [x] `SelectionGeometry.RectsFor` — um retângulo por linha visual que o trecho cruza
+- [x] `WordBoundaries.WordAt` para o duplo clique; o triplo é a linha **visual**, a mesma
+      definição que Home e End já usam
+- [x] Os oito `MoveCaret*` do ViewModel ganham `extend`. **O `CaretNavigator` não mudou uma
+      linha:** Shift não é um movimento diferente, é o mesmo sem recolher a âncora — e quem
+      mantém ou recolhe é o ViewModel
+- [x] Arrastar com captura de ponteiro (`ClickCount` 1/2/3), `Shift+clique`, `Shift+setas`,
+      `Shift+Home/End`, `Shift+PageUp/PageDown`
+- [x] Retângulos desenhados **atrás** do texto, só nas folhas que o culling já selecionou, e
+      percorridos com um índice que avança junto com as folhas em vez de uma varredura por folha
+
+Registrado desta fatia:
+
+- **As duas pontas resolvem a fronteira compartilhada para dentro do trecho** — começo
+  `Downstream`, fim `Upstream`. Não é heurística: numa quebra por largura o fim de uma linha e o
+  começo da seguinte são o mesmo offset, e resolver ao contrário penduraria um retângulo de
+  largura zero numa das pontas. É também o que dispensa a âncora de ter afinidade própria
+- **A lasca da linha em branco vale pela quebra, não pela linha.** Uma linha sem tinta dentro do
+  trecho ganha a largura de um espaço, senão pareceria um buraco no meio da seleção — mas só
+  quando o `\n` dela está dentro do trecho. Um trecho que apenas termina no começo dela não pegou
+  nada, e uma lasca ali prometeria um caractere que não existe
+- **Palavra não atravessa run.** `WordAt` expande dentro de um run, então a fronteira de estilo —
+  o começo de um `**negrito**` — vale como fronteira de palavra. Em texto comum a linha inteira é
+  um run, que é o caso que importa
+- **Meio caractere de imprecisão no duplo clique, e simétrica.** O offset chega arredondado para a
+  fronteira mais próxima, então a metade direita da última letra de uma palavra já cai no branco
+  seguinte. A regra alternativa — olhar para trás quando o caractere à direita não é de palavra —
+  tem a sua própria metade errada: clicar na metade esquerda de uma vírgula pegaria a palavra
+  antes dela. Ficou a regra simples, de um caso só
+- **`Ctrl+A` na tese inteira custa 3,65ms** para 10.667 retângulos — 0,34 µs por linha, medido no
+  `SelectionPerformanceTests` com teto de 500ms contra regressão. É barato porque as linhas
+  inteiramente dentro do trecho **não medem nada**: a esquerda é a origem da linha e a direita é a
+  tinta que o line breaker já posicionou. Só as duas linhas de fronteira medem um prefixo. O corte
+  de pedir os retângulos por folha visível não foi preciso, e fica anotado se um dia for
+
+### Fatia 3 — Recortar, copiar, colar e apagar a seleção ✅
+
+- [x] `TextBufferSnapshot.GetText(start, length)` — copiar uma linha não pode materializar o
+      documento inteiro, que nas 301 páginas são ~2MB direto no **Large Object Heap**. Atravessa
+      só as peças que o trecho cruza
+- [x] `UndoRedoStack.RecordCompound` — substituir a seleção é **um** undo. `Record` agrupa apenas
+      edições do mesmo `EditKind` que continuam de onde a anterior parou, e apagar mais inserir
+      são duas `Other`: pelo caminho normal virariam dois grupos, e um Ctrl+Z devolveria o texto
+      digitado sem devolver o que foi apagado
+- [x] Digitar, colar, Enter, Del e Backspace com seleção substituem ou apagam o trecho
+- [x] `Ctrl+C`, `Ctrl+X`, `Ctrl+V`, `Ctrl+A` no `KeyBindingRegistry`, escopo `Editor`
+- [x] Clipboard na `MainWindow`, como o `IStorageProvider` dos diálogos — o `EditorViewModel`
+      continua sem um `using` do Avalonia
+- [x] O stress diferencial do undo ganhou a operação "substituir trecho": 3 sementes × 2.000
+      operações, e é ela que prova o `RecordCompound` contra o modelo ingênuo de string
+
+Registrado desta fatia:
+
+- **`Undo` já revertia na ordem certa.** Ele desfaz de trás para a frente, que é exatamente a
+  ordem de desfazer apagar-e-inserir — o `RecordCompound` não precisou de nenhum caminho novo de
+  reversão, só de um grupo com mais de uma edição. É o mesmo argumento do `Revert`/`Reapply`: um
+  caminho de código só para manter correto
+- **Enter com seleção não materializa fronteira.** `LineBreaks.ForEnter` fala do caret; com um
+  trecho selecionado, a fronteira que interessava era a do caret que acaba de deixar de existir,
+  e o Enter vira um `\n` comum sobre a substituição
+- **Colar não precisou de caso especial.** `EditorDocument.Insert` já normalizava o fim de linha e
+  já devolvia quantos caracteres de fato entraram, e `LayoutReuse.Between` já recusava um trecho
+  com `\n` e caía na paginação completa. Uma colagem multilinha atravessa tudo isso sem uma linha
+  de código nova — é o retorno das decisões da Fatia 4.2 e do reflow incremental
+- **Recortar copia antes de apagar.** A ordem inversa tiraria o texto do documento sem ter onde
+  buscá-lo de volta se a área de transferência falhasse
+- **O Avalonia 12 reescreveu o clipboard.** `IClipboard.GetTextAsync`/`SetTextAsync` não existem
+  mais; texto passa por `ClipboardExtensions.SetTextAsync`/`TryGetTextAsync`, sobre
+  `DataFormat.Text`. Terceira surpresa da mesma família, depois do `FocusChangedEventArgs` e da
+  ausência de `Control.BringIntoView(Rect)` na Fatia 4.1
+- **Copiar e colar em si continuam sem teste automatizado**: dependem do clipboard do sistema e da
+  `MainWindow`. O que dá para testar — o trecho materializado e o undo composto — está testado
+
+### Fatia 4 — Marcação inline: negrito e itálico ✅
+
+Fecha o item "Highlighting em tempo real reaproveitando os `InlineRun` do AST" da Fase 4 e cobra
+a promessa que o `LineBreaker` faz desde a Fatia 1 da Fase 3: *"o motor já está pronto para
+`**negrito**` no meio da frase"*.
+
+- [x] `**` negrito, `*` itálico, `***` os dois; delimitador sem par sai como texto literal
+- [x] `_` continua literal — uma regra em vez de duas, e `x_1` numa fórmula não vira itálico
+- [x] A marcação sai com o **mesmo estilo** do texto que envolve: revelar muda a largura da
+      linha, nunca a altura. Mesma decisão do `## ` do heading, verificada com o mesmo teste
+- [x] **Nada mudou fora do parser**, e era a aposta da fatia: `TextStyle` já tinha `Weight` e
+      `Italic`, o `AvaloniaTextMeasurer` já traduzia os dois, o `LineBreaker` já quebrava sobre
+      runs heterogêneos e já descartava os `IsMarkup`, e o `LayoutEngine` já revelava por bloco.
+      Nem o motor de layout, nem o medidor, nem o renderizador foram tocados
+- [x] Pareamento por pilha, com busca do topo para baixo: `**a *b**` fecha o negrito e devolve o
+      asterisco solto ao texto. É também o que garante que os pares saiam aninhados, que é o que
+      permite ao estilo ser uma pilha na montagem
+- [x] Ênfase dentro de um título volta ao estilo do título, e não a "normal" — fechar um
+      `**negrito**` num `# título` não pode desemboldar o resto dele
+- [x] O documento de exemplo mostra a marcação já na primeira execução, como o CRLF faz com a
+      normalização de fim de linha desde a Fatia 4.2
+
+Registrado desta fatia:
+
+- **Quatro ou mais asteriscos seguidos não são delimitador**, e é o que resolve `****` sem caso
+  especial: pareá-lo daria uma ênfase vazia, que some da tela e deixa o autor sem entender para
+  onde foi o que digitou
+- **Duas condições de flanqueamento, não a regra inteira do CommonMark:** um delimitador seguido
+  de branco não abre e um precedido de branco não fecha. É o que impede `2 * 3 * 4` de virar
+  itálico. Colado em palavra, `pre*meio*pos` enfatiza — que é o que o CommonMark também faz
+- **O caret não fica preso em marcação escondida**, e não foi preciso tocar no `CaretNavigator`
+  para isso: revelar é por bloco, e um bloco aqui é uma linha da fonte. No instante em que o
+  caret entra na linha, todo o `**` dela aparece e as setas andam sobre ele como sobre qualquer
+  letra. Estar dentro de marcação escondida exigiria o caret estar em outra linha
+- **Chegar por baixo a uma linha que termina em marcação pousa um delimitador antes do fim.** Com
+  a marcação escondida a linha cobre até o último caractere visível, e é para lá que `←` e `↑`
+  mandam o caret; a repaginação revela em seguida, e aí o `**` final aparece à direita dele. Nada
+  fica inalcançável — `End` e `→` chegam lá —, e é o espelho do que o heading já fazia pelo outro
+  lado
+- **Sem escape (`\*`).** Exigiria um segundo passe no tokenizer e não há demanda; entra quando
+  alguém precisar de um asterisco literal dentro de uma frase enfatizada
+- **Sublinhado ficou de fora por decisão de norma**, não por custo: ABNT e APA usam itálico em
+  texto corrido, e o Markdown não tem sintaxe própria para ele. A sintaxe se decide quando o uso
+  aparecer
+
+---
+
+## Fase 6 — Documento acadêmico ⬜
 
 - [ ] Cabeçalho/rodapé (populando os campos reservados desde a Fase 3)
 - [ ] Numeração de página
@@ -770,6 +961,15 @@ Registrado desta fatia:
 Nada aqui está prometido; é estacionamento para não perder a ideia nem inflar as fases acima.
 
 - Justificação de texto Knuth-Plass (o MVP usa greedy word-wrap)
+- Sublinhado — Markdown não tem sintaxe para ele, e ABNT e APA usam itálico em texto corrido. A
+  sintaxe se decide quando o uso aparecer
+- Escape de marcação inline (`\*`), para um asterisco literal dentro de uma frase enfatizada
+- Rolagem automática ao arrastar a seleção para fora da janela
+- Seleção múltipla (`IReadOnlyList<SelectionRange>`) — veio da Fase 4. Multi-cursor é feature de
+  code editor; num editor de tese a lista plural custaria indireção em cada tecla, cada desenho e
+  cada edição por algo que talvez nunca venha
+- Chords reais registrados (ex: `Ctrl+K, Ctrl+S`) — veio da Fase 4. `KeyBindingRegistry` já
+  suporta N passos e tem teste; falta um comando que queira um chord, não máquina
 - Árvore balanceada na piece list (só se o profiling exigir)
 - Exportação DOCX
 - Normas configuráveis (ABNT/APA) como presets de `PageSettings`

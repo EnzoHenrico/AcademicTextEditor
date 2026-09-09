@@ -16,6 +16,8 @@ public static class Text
 
         A linha em branco acima e a de baixo existem de verdade: têm altura, ocupam espaço na folha e o caret pousa nelas.
 
+        A marcação inline é **negrito**, *itálico* e ***os dois***, e ela aparece na linha onde o caret está — como o `##` de um título. Um asterisco sem par, ou um usado como multiplicação (2 * 3), continua sendo texto.
+
         \page
 
         Esta folha começou por uma quebra de página explícita no markup.

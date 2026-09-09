@@ -49,6 +49,30 @@ public sealed class TextBufferSnapshot
         return string.Create(Length, this, static (destination, snapshot) => snapshot.CopyTo(destination));
     }
 
+    /// <summary>Materializa um trecho — o que a cópia para a área de transferência precisa.</summary>
+    /// <remarks>
+    /// Existe para que copiar uma linha não custe o documento inteiro: nas 301 páginas do corpus
+    /// de referência, <see cref="GetText()"/> aloca ~2MB, que passa dos 85KB do <b>Large Object
+    /// Heap</b> e cobra uma coleta de geração 2 — a mesma alocação que a fatia do coalescimento
+    /// já apontou como próximo alvo.
+    /// </remarks>
+    public string GetText(int start, int length)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(start);
+        ArgumentOutOfRangeException.ThrowIfNegative(length);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(start + length, Length);
+
+        if (length == 0)
+        {
+            return string.Empty;
+        }
+
+        return string.Create(
+            length,
+            (Snapshot: this, Start: start),
+            static (destination, state) => state.Snapshot.CopyRange(destination, state.Start));
+    }
+
     public void CopyTo(Span<char> destination)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(destination.Length, Length);
@@ -63,6 +87,40 @@ public sealed class TextBufferSnapshot
 
             source.CopyTo(destination[position..]);
             position += piece.Length;
+        }
+    }
+
+    /// <summary>Copia <c>destination.Length</c> caracteres a partir de <paramref name="start"/>.</summary>
+    private void CopyRange(Span<char> destination, int start)
+    {
+        var position = 0;
+        var written = 0;
+
+        foreach (var piece in _pieces)
+        {
+            var pieceEnd = position + piece.Length;
+
+            // Peças inteiramente antes do trecho não custam nada além do avanço do contador: é o
+            // que mantém a cópia proporcional ao que se pediu, e não ao documento.
+            if (pieceEnd > start)
+            {
+                var from = Math.Max(start - position, 0);
+                var take = Math.Min(piece.Length - from, destination.Length - written);
+
+                var source = piece.Source == PieceSource.Original
+                    ? _original.AsSpan(piece.Start + from, take)
+                    : _added.AsSpan(piece.Start + from, take);
+
+                source.CopyTo(destination[written..]);
+                written += take;
+
+                if (written == destination.Length)
+                {
+                    return;
+                }
+            }
+
+            position = pieceEnd;
         }
     }
 }

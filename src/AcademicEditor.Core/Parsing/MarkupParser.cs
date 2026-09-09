@@ -15,10 +15,10 @@ namespace AcademicEditor.Core.Parsing;
 /// da largura da página, e é do <c>LineBreaker</c>.
 /// </para>
 /// <para>
-/// Cada bloco emite um <see cref="InlineRun"/> de texto, mais um de marcação quando tem. A
-/// estrutura já suporta
-/// runs heterogêneos numa linha — é o line breaker que quebra sobre a sequência — então
-/// acrescentar <c>**negrito**</c> depois é trabalho deste arquivo, não do motor de layout.
+/// Um bloco emite a sequência alternada de runs de texto e de marcação que
+/// <see cref="InlineMarkup"/> extrai da linha, mais o run da marcação de bloco quando tem. Quem
+/// quebra sobre runs heterogêneos é o line breaker, e é por isso que <c>**negrito**</c> coube
+/// aqui sem tocar no motor de layout.
 /// </para>
 /// <para>
 /// <b>Pressupõe fonte normalizada em LF.</b> Com CRLF cru, o <c>\r</c> fica fora de todo run e
@@ -28,7 +28,7 @@ namespace AcademicEditor.Core.Parsing;
 /// </remarks>
 public static class MarkupParser
 {
-    // Preset tipográfico do MVP. Na Fase 5 isto vira parte de um preset de norma (ABNT/APA)
+    // Preset tipográfico do MVP. Na Fase 6 isto vira parte de um preset de norma (ABNT/APA)
     // junto com PageSettings, em vez de constante no parser.
     private static readonly double[] HeadingSizesPt = [20.0, 17.0, 14.0, 12.0, 11.0, 11.0];
 
@@ -59,7 +59,6 @@ public static class MarkupParser
     {
         var style = new TextStyle(HeadingSizesPt[token.Level - 1], FontWeightKind.Bold, Italic: false);
         var markupLength = token.ContentStart - token.LineStart;
-        var text = source.Substring(token.ContentStart, token.ContentLength);
 
         // O "## " sai com o MESMO estilo do heading. Revelar a marcação passa a mudar a largura da
         // linha, não a altura dela — senão o documento inteiro subiria e desceria a cada vez que o
@@ -67,22 +66,18 @@ public static class MarkupParser
         IReadOnlyList<InlineRun> runs =
         [
             new InlineRun(source.Substring(token.LineStart, markupLength), token.LineStart, style, IsMarkup: true),
-            new InlineRun(text, token.ContentStart, style),
+            .. BuildRuns(source, token, style),
         ];
 
         return new HeadingNode(token.Level, token.LineStart, token.LineLength, runs);
     }
 
-    private static ParagraphNode BuildParagraph(string source, MarkupToken token)
-    {
-        var text = source.Substring(token.ContentStart, token.ContentLength);
-
-        return new ParagraphNode(token.LineStart, token.LineLength, BuildRuns(text, token.ContentStart, TextStyle.Body));
-    }
+    private static ParagraphNode BuildParagraph(string source, MarkupToken token) =>
+        new(token.LineStart, token.LineLength, BuildRuns(source, token, TextStyle.Body));
 
     // Todo bloco emite ao menos um run, ainda que de texto vazio. É dele que o line breaker tira
     // a altura e o offset da linha: sem run algum, "# " recém-digitado seria medido com a altura
     // do corpo e uma linha em branco reivindicaria o offset zero do documento.
-    private static IReadOnlyList<InlineRun> BuildRuns(string text, int sourceStart, TextStyle style) =>
-        [new InlineRun(text, sourceStart, style)];
+    private static IReadOnlyList<InlineRun> BuildRuns(string source, MarkupToken token, TextStyle style) =>
+        InlineMarkup.Parse(source.Substring(token.ContentStart, token.ContentLength), token.ContentStart, style);
 }

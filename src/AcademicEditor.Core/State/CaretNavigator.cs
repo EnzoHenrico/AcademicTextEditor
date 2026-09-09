@@ -49,6 +49,88 @@ public static class CaretNavigator
                 affinity);
     }
 
+    /// <summary>Caret no ponto onde o autor clicou.</summary>
+    /// <remarks>
+    /// <para>
+    /// O caminho que faltava: todo movimento daqui parte de um caret e chega a outro, e não havia
+    /// como <b>entrar</b> por um ponto da folha. É o inverso exato de
+    /// <see cref="CaretGeometry.Locate"/>, e recebe o ponto na mesma convenção que aquele devolve
+    /// — pontos, relativos ao canto da área de conteúdo da página. A conversão de DIP para ponto
+    /// é da camada de renderização, e é lá que ela fica.
+    /// </para>
+    /// <para>
+    /// <b>Todo clique pousa em algum lugar.</b> Acima da primeira linha e abaixo da última, nos
+    /// extremos da folha; numa folha em branco — que uma quebra de página dupla produz —, na
+    /// vizinha com conteúdo. Um clique que não movesse o caret pareceria o editor ignorando o
+    /// mouse.
+    /// </para>
+    /// </remarks>
+    /// <param name="xPt">Distância da margem esquerda da área de conteúdo.</param>
+    /// <param name="yPt">Distância do topo da área de conteúdo.</param>
+    public static Caret AtPoint(
+        int pageIndex,
+        double xPt,
+        double yPt,
+        PaginatedDocument document,
+        ITextMeasurer measurer)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(measurer);
+
+        var (page, line) = LineAtPoint(pageIndex, yPt, document);
+
+        if (page < 0)
+        {
+            // Documento sem linha alguma: só acontece quando o conteúdo inteiro é quebra de
+            // página. Não há onde pousar, e o caret fica onde o documento começa.
+            return new Caret(0, 0.0);
+        }
+
+        var target = document.Pages[page].Lines[line];
+
+        // Um marcador de bloco é indivisível — a mesma regra que o Stop() aplica às setas. Clicar
+        // no meio do filete tracejado não descreve nada que o autor possa editar.
+        var offset = target.Kind == LineKind.Text
+            ? CaretGeometry.OffsetAtColumn(target, xPt, measurer)
+            : target.SourceStart;
+
+        return new Caret(
+            offset,
+            CaretGeometry.ColumnPt(target, offset, measurer),
+            AffinityFor(document, page, line, offset));
+    }
+
+    /// <summary>A linha que o ponto atinge, grampeada nos extremos da folha.</summary>
+    private static (int PageIndex, int LineIndex) LineAtPoint(
+        int pageIndex,
+        double yPt,
+        PaginatedDocument document)
+    {
+        var page = Math.Clamp(pageIndex, 0, document.Pages.Count - 1);
+        var lines = document.Pages[page].Lines;
+
+        if (lines.Count == 0)
+        {
+            // Folha em branco. Para trás primeiro: o caret pertence ao texto que a quebra
+            // encerrou, não ao que ainda não começou.
+            var previous = CaretGeometry.PreviousLine(document, page, 0);
+
+            return previous.PageIndex >= 0 ? previous : CaretGeometry.NextLine(document, page, -1);
+        }
+
+        for (var index = 0; index < lines.Count; index++)
+        {
+            if (yPt < lines[index].YPt + lines[index].HeightPt)
+            {
+                return (page, index);
+            }
+        }
+
+        // Abaixo da última linha: a última. Acima da primeira o laço já devolve a primeira,
+        // porque o topo dela é o topo da área de conteúdo.
+        return (page, lines.Count - 1);
+    }
+
     public static Caret MoveLeft(Caret caret, PaginatedDocument document, ITextMeasurer measurer)
     {
         var (page, line) = Locate(caret, document);

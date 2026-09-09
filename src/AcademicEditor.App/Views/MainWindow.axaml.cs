@@ -6,6 +6,7 @@ using AcademicEditor.Core.Input;
 using AcademicEditor.Core.Layout;
 
 using Avalonia.Controls;
+using Avalonia.Input.Platform;
 using Avalonia.Platform.Storage;
 
 namespace AcademicEditor.App.Views;
@@ -54,6 +55,10 @@ public partial class MainWindow : Window
         _shortcuts.Handle(EditorCommands.Save, SaveAsync);
         _shortcuts.Handle(EditorCommands.SaveAs, SaveAsAsync);
         _shortcuts.Handle(EditorCommands.Open, OpenAsync);
+        _shortcuts.Handle(EditorCommands.Copy, CopyAsync);
+        _shortcuts.Handle(EditorCommands.Cut, CutAsync);
+        _shortcuts.Handle(EditorCommands.Paste, PasteAsync);
+        _shortcuts.Handle(EditorCommands.SelectAll, _viewModel.SelectAll);
 
         // Um save que falha é a falha que mais importa neste programa. Sem isto ela sumiria numa
         // Task descartada e o autor acharia que gravou.
@@ -87,11 +92,62 @@ public partial class MainWindow : Window
             Chord(KeyCode.Z, ModifierKeys.Control | ModifierKeys.Shift),
             EditorCommands.Redo);
 
+        // A área de transferência. O despachante escuta no tunelamento, então nenhum destes chega
+        // ao PageSurface como texto — é a mesma razão pela qual Ctrl+S salva em vez de escrever "s".
+        registry.Bind(ShortcutScope.Editor, Chord(KeyCode.C, ModifierKeys.Control), EditorCommands.Copy);
+        registry.Bind(ShortcutScope.Editor, Chord(KeyCode.X, ModifierKeys.Control), EditorCommands.Cut);
+        registry.Bind(ShortcutScope.Editor, Chord(KeyCode.V, ModifierKeys.Control), EditorCommands.Paste);
+        registry.Bind(
+            ShortcutScope.Editor,
+            Chord(KeyCode.A, ModifierKeys.Control),
+            EditorCommands.SelectAll);
+
         return registry;
     }
 
     private static ChordSequence Chord(KeyCode key, ModifierKeys modifiers) =>
         new(new KeyStroke(key, modifiers));
+
+    // A área de transferência fica aqui, e não no ViewModel, exatamente como o IStorageProvider
+    // dos diálogos de arquivo: é serviço da janela. Mantém o EditorViewModel sem um único using do
+    // Avalonia e dispensa inventar uma interface para envolver a que o toolkit já tem.
+    //
+    // O Avalonia 12 reescreveu esta API: IClipboard.GetTextAsync/SetTextAsync não existem mais, e
+    // texto passa por métodos de extensão sobre DataFormat.Text.
+    private async Task CopyAsync()
+    {
+        if (Clipboard is { } clipboard && _viewModel.SelectedText is { Length: > 0 } text)
+        {
+            await clipboard.SetTextAsync(text).ConfigureAwait(true);
+        }
+    }
+
+    /// <summary>Recortar é copiar e apagar — nesta ordem.</summary>
+    /// <remarks>
+    /// Apagar antes de a área de transferência confirmar tiraria o texto do documento sem ter onde
+    /// buscá-lo de volta, e um Ctrl+V logo depois traria outra coisa.
+    /// </remarks>
+    private async Task CutAsync()
+    {
+        await CopyAsync().ConfigureAwait(true);
+        _viewModel.DeleteSelection();
+    }
+
+    private async Task PasteAsync()
+    {
+        if (Clipboard is not { } clipboard)
+        {
+            return;
+        }
+
+        // Colar não precisa de caso especial para várias linhas: o EditorDocument normaliza o fim
+        // de linha na entrada e devolve quantos caracteres de fato entraram, e o LayoutReuse já
+        // recusa um trecho com '\n' e cai na paginação completa, que é código provado.
+        if (await clipboard.TryGetTextAsync().ConfigureAwait(true) is { Length: > 0 } text)
+        {
+            _viewModel.InsertText(text);
+        }
+    }
 
     private async Task SaveAsync()
     {

@@ -21,6 +21,10 @@ public static class EditorCommands
     public static readonly CommandId Open = new("editor.open");
     public static readonly CommandId Undo = new("editor.undo");
     public static readonly CommandId Redo = new("editor.redo");
+    public static readonly CommandId Copy = new("editor.copy");
+    public static readonly CommandId Cut = new("editor.cut");
+    public static readonly CommandId Paste = new("editor.paste");
+    public static readonly CommandId SelectAll = new("editor.selectAll");
 }
 
 /// <summary>Onde um atalho vale.</summary>

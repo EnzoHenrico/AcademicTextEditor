@@ -28,6 +28,10 @@ public static class PageRenderer
     private const double CaretWidthDip = 1.0;
 
     private static readonly IBrush PageBrush = Brushes.White;
+
+    // Opaco, e desenhado ATRÁS do texto: um destaque translúcido por cima mudaria a cor de cada
+    // glifo, e o que o autor quer ver é o texto, marcado.
+    private static readonly IBrush SelectionBrush = new SolidColorBrush(Color.FromRgb(0xB4, 0xD5, 0xFE));
     private static readonly IBrush CaretBrush = Brushes.Black;
     private static readonly IBrush TextBrush = Brushes.Black;
     private static readonly IPen PageBorderPen = new Pen(new SolidColorBrush(Color.FromRgb(0xC8, 0xC8, 0xC8)), 1.0);
@@ -80,6 +84,59 @@ public static class PageRenderer
             caret.HeightPt * PtToDip);
     }
 
+    /// <summary>
+    /// Onde um ponto da superfície cai no documento: a folha, e a posição em pontos relativa ao
+    /// canto da área de conteúdo dela. <c>null</c> só num documento sem folha alguma.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>É o inverso algébrico de <see cref="CaretRectDip"/>, e mora ao lado dele pelo motivo que
+    /// aquele método já documenta:</b> recalcular a soma de <see cref="PageGapDip"/>, origem da
+    /// folha e margem em outro arquivo é exatamente como as duas contas divergem uma da outra
+    /// depois. Quem quiser conferir, confere lendo os dois juntos.
+    /// </para>
+    /// <para>
+    /// A folha sai por <b>aritmética</b>, não por varredura — a mesma divisão pelo passo da pilha
+    /// que <c>VisiblePages</c> usa. Um clique no vão entre duas folhas cai na de cima, porque o vão
+    /// pertence ao passo dela.
+    /// </para>
+    /// <para>
+    /// <b>Não grampeia nada</b>, e é de propósito: um ponto acima do texto devolve
+    /// <c>YPt</c> negativo, e um à direita da margem devolve <c>XPt</c> maior que a largura útil.
+    /// Quem resolve isso é o <c>CaretNavigator.AtPoint</c>, no Core, que já grampeia por
+    /// construção — e assim a regra de "todo clique pousa em algum lugar" tem um dono só, testável
+    /// sem subsistema gráfico. O sinal cru também é o que diz se o ponteiro está sobre o papel ou
+    /// sobre a margem, que é o que decide o cursor.
+    /// </para>
+    /// </remarks>
+    public static (int PageIndex, double XPt, double YPt)? HitTest(
+        PaginatedDocument document,
+        Point dip,
+        double surfaceWidthDip)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        if (document.Pages.Count == 0)
+        {
+            return null;
+        }
+
+        var settings = document.Settings;
+        var stepDip = (settings.HeightPt * PtToDip) + PageGapDip;
+        var pageIndex = Math.Clamp((int)((dip.Y - PageGapDip) / stepDip), 0, document.Pages.Count - 1);
+        var origin = PageOrigin(settings, pageIndex, surfaceWidthDip);
+
+        return (
+            pageIndex,
+            ((dip.X - origin.X) / PtToDip) - settings.ContentLeftPt,
+            ((dip.Y - origin.Y) / PtToDip) - settings.ContentTopPt);
+    }
+
+    /// <param name="selection">
+    /// Onde pintar o destaque, já calculado pelo <c>SelectionGeometry</c> — <c>Render</c> não
+    /// recalcula nada. <b>Assume ordenado por página</b>, que é como o Core o produz: é o que
+    /// permite percorrer a lista uma vez só enquanto as folhas visíveis passam.
+    /// </param>
     /// <param name="viewport">
     /// Retângulo visível, nas coordenadas da superfície. Só as folhas que ele cruza são
     /// desenhadas. <c>null</c> desenha a pilha inteira — é o que uma medição ou um exportador
@@ -90,17 +147,37 @@ public static class PageRenderer
         PaginatedDocument document,
         double surfaceWidthDip,
         CaretPosition? caret = null,
-        Rect? viewport = null)
+        Rect? viewport = null,
+        IReadOnlyList<SelectionRect>? selection = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(document);
 
         var settings = document.Settings;
         var (first, last) = VisiblePages(document, viewport);
+        var rects = selection ?? [];
+
+        // Índice que avança junto com as folhas, em vez de varrer a lista uma vez por folha: um
+        // Ctrl+A num documento de 300 páginas produz dezesseis mil retângulos, e o culling existe
+        // justamente para nenhum quadro pagar por todos eles.
+        var cursor = 0;
+
+        while (cursor < rects.Count && rects[cursor].PageIndex < first)
+        {
+            cursor++;
+        }
 
         for (var index = first; index <= last; index++)
         {
-            RenderPage(context, document.Pages[index], settings, PageOrigin(settings, index, surfaceWidthDip));
+            var origin = PageOrigin(settings, index, surfaceWidthDip);
+            var start = cursor;
+
+            while (cursor < rects.Count && rects[cursor].PageIndex == index)
+            {
+                cursor++;
+            }
+
+            RenderPage(context, document.Pages[index], settings, origin, rects, start, cursor);
         }
 
         if (caret is { } position && CaretRectDip(document, position, surfaceWidthDip) is { } rect)
@@ -142,13 +219,35 @@ public static class PageRenderer
             PageGapDip + (pageIndex * (pageHeightDip + PageGapDip)));
     }
 
-    private static void RenderPage(DrawingContext context, PageLayout page, PageSettings settings, Point origin)
+    private static void RenderPage(
+        DrawingContext context,
+        PageLayout page,
+        PageSettings settings,
+        Point origin,
+        IReadOnlyList<SelectionRect> selection,
+        int selectionStart,
+        int selectionEnd)
     {
         var bounds = new Rect(origin, new Size(settings.WidthPt * PtToDip, settings.HeightPt * PtToDip));
         context.DrawRectangle(PageBrush, PageBorderPen, bounds);
 
         var contentLeftDip = origin.X + (settings.ContentLeftPt * PtToDip);
         var contentTopDip = origin.Y + (settings.ContentTopPt * PtToDip);
+
+        // Depois do papel e antes do texto: é a ordem que faz o destaque marcar o texto em vez de
+        // apagá-lo.
+        for (var index = selectionStart; index < selectionEnd; index++)
+        {
+            var rect = selection[index];
+
+            context.FillRectangle(
+                SelectionBrush,
+                new Rect(
+                    contentLeftDip + (rect.XPt * PtToDip),
+                    contentTopDip + (rect.YPt * PtToDip),
+                    rect.WidthPt * PtToDip,
+                    rect.HeightPt * PtToDip));
+        }
 
         foreach (var line in page.Lines)
         {

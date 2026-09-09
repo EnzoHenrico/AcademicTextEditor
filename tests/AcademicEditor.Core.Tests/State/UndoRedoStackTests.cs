@@ -186,6 +186,25 @@ public sealed class UndoRedoStackTests
                     break;
                 }
 
+                // Substituir um trecho: duas edições num grupo só, que é o que digitar ou colar
+                // sobre uma seleção faz. É a operação que o RecordCompound existe para registrar,
+                // e a que depende de o Undo reverter na ordem inversa.
+                case 7 when current.Length > 0:
+                {
+                    var offset = random.Next(current.Length);
+                    var length = random.Next(1, Math.Min(5, current.Length - offset) + 1);
+                    var text = new string((char)('A' + random.Next(26)), random.Next(1, 4));
+
+                    var removal = document.Delete(offset, length);
+                    var insertion = document.Insert(offset, text);
+
+                    undo.RecordCompound([removal, insertion], offset + length, offset + text.Length);
+                    done.Add(current);
+                    undone.Clear();
+                    current = current[..offset] + text + current[(offset + length)..];
+                    break;
+                }
+
                 case <= 8 when done.Count > 0:
                 {
                     undo.Undo();
@@ -207,6 +226,59 @@ public sealed class UndoRedoStackTests
 
             Assert.Equal(current, Text(document));
         }
+    }
+
+    // Substituir a seleção são duas edições — apagar e inserir —, e as duas são EditKind.Other.
+    // Pelo caminho do Record virariam dois grupos, e um Ctrl+Z devolveria o texto digitado sem
+    // devolver o que foi apagado.
+    [Fact]
+    public void Substituir_um_trecho_e_um_undo_so()
+    {
+        var (document, undo) = New("abcdef");
+
+        var removal = document.Delete(1, 3);
+        var insertion = document.Insert(1, "XY");
+
+        Assert.Equal("aXYef", Text(document));
+
+        // O trecho 1..4 estava selecionado com o caret no fim dele; depois da substituição o
+        // caret fica no fim do que entrou.
+        undo.RecordCompound([removal, insertion], caretBefore: 4, caretAfter: 3);
+
+        Assert.Equal(4, undo.Undo());
+        Assert.Equal("abcdef", Text(document));
+
+        Assert.Equal(3, undo.Redo());
+        Assert.Equal("aXYef", Text(document));
+    }
+
+    // Nada se junta a uma substituição: a tecla seguinte abre grupo próprio, e desfazer devolve a
+    // substituição inteira em vez de levar junto o que veio depois.
+    [Fact]
+    public void Substituicao_fecha_o_grupo()
+    {
+        var (document, undo) = New("abc");
+
+        undo.RecordCompound([document.Delete(0, 3), document.Insert(0, "X")], 3, 1);
+        undo.Record(document.Insert(1, "y"), EditKind.Typing, 1, 2);
+
+        Assert.Equal("Xy", Text(document));
+
+        undo.Undo();
+        Assert.Equal("X", Text(document));
+
+        undo.Undo();
+        Assert.Equal("abc", Text(document));
+    }
+
+    [Fact]
+    public void Substituicao_vazia_nao_entra_no_historico()
+    {
+        var (document, undo) = New("abc");
+
+        undo.RecordCompound([PieceEdit.Empty], 0, 0);
+
+        Assert.False(undo.CanUndo);
     }
 
     private static (EditorDocument Document, UndoRedoStack Undo) New(string text)
