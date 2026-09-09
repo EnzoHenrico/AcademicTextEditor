@@ -521,23 +521,27 @@ linha. **Os totais não se subtraem; o que se compara é o custo por linha.**
 
 | | algoritmo (`FakeTextMeasurer`) | real (`AvaloniaTextMeasurer`) |
 |---|---|---|
-| caracteres do corpus | 409.529 | 1.215.789 |
-| páginas | 314 | 352 |
-| linhas | 10.668 | 19.001 |
-| tempo de uma repaginação | 33 ms | **1.304 ms** |
-| **por linha** | **3,11 µs** | **68,63 µs** |
+| caracteres do corpus | 409.529 | 1.017.245 |
+| páginas | 314 | 301 |
+| linhas | 10.668 | 16.056 |
+| tempo de uma repaginação | 33 ms | **910 ms** |
+| **por linha** | **3,11 µs** | **56,66 µs** |
 
 `LayoutPerformanceTests` mede a primeira coluna e guarda um teto de 3s contra regressão de ordem
 de grandeza; `--measure-layout` no App mede a segunda, com o medidor instrumentado.
 
-**O motor não é o gargalo — a medição de texto é.** 68,63 ÷ 3,11 ≈ **22**: medir texto de verdade
-custa vinte e duas vezes o que custa todo o resto do motor junto. A passada instrumentada confirma
-pelo outro lado — **1,27s dos 1,3s (97,5%) estão dentro do `ITextMeasurer`**, em 416.739 chamadas a
+*(Os números da segunda coluna foram refeitos quando o corpus do benchmark ganhou vocabulário
+realista e títulos, na fatia do cache — ver Fase 4. A conclusão não mudou; os números do commit
+original são os do corpus de dezoito palavras.)*
+
+**O motor não é o gargalo — a medição de texto é.** 56,66 ÷ 3,11 ≈ **18**: medir texto de verdade
+custa dezoito vezes o que custa todo o resto do motor junto. A passada instrumentada confirma pelo
+outro lado — **893ms dos 910ms (98,1%) estão dentro do `ITextMeasurer`**, em 258.002 chamadas a
 `MeasureWidthPt`, cada uma construindo um `TextLayout` e alocando uma string, porque o line breaker
-mede chunk a chunk (~22 por linha). As outras 380.001 chamadas são `GetLineMetrics`, que o cache
+mede chunk a chunk (~16 por linha). As outras 243.217 chamadas são `GetLineMetrics`, que o cache
 por estilo já resolve: são buscas em dicionário e não pesam.
 
-Na prática: **digitar num documento de 352 páginas deixa a tela 1,3s atrás do buffer.** A janela
+Na prática: **digitar num documento de 301 páginas deixa a tela 0,9s atrás do buffer.** A janela
 não trava, porque o layout roda em background e é cancelável — mas cada tecla cancela a
 repaginação pendente, então a tela só alcança o texto quando o autor para de digitar.
 
@@ -557,14 +561,195 @@ Decisão que sai daí:
 
 ---
 
-## Fase 4 — Editor de verdade ⬜
+## Fase 4 — Editor de verdade 🔨
 
-- [ ] Reflow incremental (dirty-range em 3 níveis: parser → line-breaker → page-breaker)
+- [x] **Cache de medição de texto** por `(texto, estilo)` — não estava nesta lista, entrou na
+      frente porque a medição da Fatia 6 mostrou que era ele, e não o reflow, o primeiro gargalo
+- [x] **Reflow incremental** — em um nível, não três: a medição mostrou que o parser é de graça
 - [ ] Highlighting em tempo real reaproveitando os `InlineRun` do AST (sem motor separado)
 - [ ] Seleção múltipla (`IReadOnlyList<SelectionRange>`)
 - [ ] Geometria exata do caret via `LaidOutLine.SourceStart` ↔ `TextLayout`
 - [ ] Chords reais registrados (ex: `Ctrl+K, Ctrl+S`)
-- [ ] Culling de páginas fora do viewport no `Render`
+- [x] **Culling de páginas fora do viewport no `Render`** — subiu na fila pelo mesmo motivo do
+      cache: a medição apontou para ele
+
+### Reflow incremental ✅
+
+Aberta com o sintoma que sobrou depois do culling: "só passo a sentir o delay quando gero uma
+grande quantidade de inputs". Era a repaginação completa a cada tecla — 74ms e ~7MB de lixo, oito
+vezes por segundo enquanto se digita.
+
+A decomposição decidiu o desenho da fatia:
+
+| | |
+|---|---|
+| parser | **0,5 ms** |
+| line breaker + page breaker | **74,3 ms** |
+
+- [x] **O nível de parser do roadmap não existe.** Reparsear o documento inteiro custa meio
+      milissegundo; o custo é construir 16.056 `LaidOutLine` para um documento em que uma linha
+      mudou. Três níveis viraram um
+- [x] **O trecho alterado sai de comparar os dois textos** — prefixo e sufixo comuns —, não de
+      rastrear edições. Exato por construção, sobrevive a uma rajada de teclas coalescida num
+      layout só, e trata colar, desfazer e refazer sem caso especial. Custa ~1ms por megabyte
+- [x] **Só o caso comum entra**: alteração que não cria nem apaga `\n`. Aí os blocos são os mesmos
+      um a um, e só um precisa ser requebrado. Enter, Backspace numa fronteira, colar um parágrafo
+      ou trocar a geometria devolvem `null`, e o motor pagina do zero pelo caminho de sempre
+- [x] Deslocar uma linha reaproveitada custa uma cópia de record — a mesma que o page breaker já
+      paga ao assentá-la numa folha. O que some é o caro: montar chunks, medir cada palavra e
+      alocar o texto dos runs
+- [x] O bloco revelado tem de ser o bloco sujo, antes e depois. Revelar muda a largura da linha,
+      então um caret que atravessa fronteira muda a aparência de dois blocos sem mudar o texto
+      deles — e aí não há o que reaproveitar
+
+**Medido:** uma tecla no meio do documento de 301 páginas passou de **70,7 ms para 11,2 ms**
+(6,3x). O que sobra é o parser, a comparação dos textos e o page breaker reempilhando as 16 mil
+linhas.
+
+Registrado desta fatia:
+
+- **A asserção dos testes não é o ganho, é a identidade**: reaproveitar tem de devolver exatamente
+  o documento que a paginação completa devolveria, linha por linha e offset por offset, em sete
+  cenários. Um reaproveitamento errado não quebra o desenho — quebra o caret, e isso aparece longe
+  de onde errou
+- **Duas testemunhas contam as medições** que chegam ao `ITextMeasurer`: 30 no caminho completo
+  contra 3 no incremental. Sem elas, os testes de identidade passariam comparando a paginação
+  completa com ela mesma
+- **O motor recusa em vez de arriscar.** Toda condição duvidosa devolve `null` e cai no caminho
+  completo, que é código provado — inclusive uma verificação final de que as linhas antigas foram
+  consumidas exatamente até o fim
+- **O page breaker ainda reempilha tudo.** Parar cedo quando uma quebra de página cai na mesma
+  linha de antes ("reflow until resync") é o próximo corte, se 11ms incomodar
+
+### Digitação: coalescer em vez de cancelar ✅
+
+Com o culling e o reflow no lugar, sobrou o pior sintoma: **segurar uma tecla não mostrava nada e o
+caret congelava; ao soltar, tudo aparecia de uma vez.**
+
+O culpado era o debounce de 50ms com teto de 120ms, e o comentário dele descrevia este mesmo
+sintoma como algo já resolvido na Fatia 4.1. Estava resolvido pela metade: **o teto garantia que o
+layout começasse em até 120ms, não que ele terminasse.** `SchedulePagination` abria com
+`_pending?.Cancel()`, e o token ia para dentro do `Task.Run` e do `LayoutEngine.Layout`.
+
+- [x] O ciclo que travava: um layout passa do intervalo de repetição do teclado (~33ms — um pico de
+      GC basta) → a tecla seguinte o mata antes de publicar → o relógio da última publicação não
+      avança → a espera desaba para zero → daí em diante cada tecla mata a anterior, e nada publica
+      até soltar
+- [x] **Zerar o debounce pioraria**, que era a hipótese natural: toda tecla passaria a iniciar um
+      layout que a seguinte mata, com o mesmo desfecho e mais trabalho jogado fora. O defeito não
+      era o valor do número, era cancelar quem já estava trabalhando
+- [x] Trocado por **um layout em voo por vez, com pedido pendente**. Quem chega durante um layout só
+      marca; quem está rodando atende ao terminar. **Inanição deixa de ser possível por
+      construção** — não há cancelamento no caminho da digitação
+- [x] A taxa se auto-regula: publica-se na velocidade em que os layouts terminam. Com os 11ms do
+      reflow, isso é mais rápido que a repetição do teclado, e cada tecla ganha o seu quadro
+- [x] Sumiram junto `DebounceMilliseconds`, `MaxLatencyMilliseconds`, o `CancellationTokenSource`, o
+      relógio da última publicação, as duas gerações e o `Dispatcher.Post`. A guarda de geração
+      existia porque um layout cancelado podia chegar depois de um mais novo; com um de cada vez, a
+      ordem é garantida. O `ConfigureAwait(true)` traz a continuação para a UI thread, onde o
+      estado vive
+
+Registrado desta fatia:
+
+- **Esta é a única das quatro que não pôde ser medida antes.** As outras três saíram de um número;
+  esta saiu de abrir o app e segurar uma tecla. O pipeline depende do dispatcher do Avalonia, que
+  não roda laço de mensagens sob `SetupWithoutStarting`, e `EditorViewModel` vive no App, sem teste
+- **Cada layout ainda aloca o documento inteiro como string** — ~2MB nas 301 páginas, o que passa
+  dos 85KB do **Large Object Heap** e cobra uma coleta de geração 2, que pausa a UI. É a explicação
+  mais provável para um layout estourar os 33ms e disparar o ciclo acima. `TextBufferSnapshot` já
+  tem `CopyTo(Span<char>)` esperando por um buffer reaproveitado, e o comentário de lá já previa
+  isto. Próximo alvo, com medição antes
+- **O laço captura exceção e reporta.** Sem isso, uma falha dentro dele deixaria o documento
+  congelado sem explicação nenhuma na tela
+
+### Culling do desenho ✅
+
+Aberta depois de abrir o documento de 301 páginas no app e ele ficar "consistentemente lento, como
+se o processador estivesse sempre atrás de uma fila, independente da operação". Não era a
+paginação — aquela já estava em 68ms e roda em background. Era o **desenho**.
+
+`PageRenderer.Render` percorria a pilha inteira e construía um `TextLayout` por linha: **16.056 por
+quadro, na UI thread**. E o quadro não era raro — `InvalidateVisual` vem do timer de piscar do
+caret, **a cada 530ms, para sempre**.
+
+Medido com `--measure-render`, desenhando num `RenderTargetBitmap` de 900×700 com o
+`DrawingContext` de verdade:
+
+| | ms por quadro |
+|---|---|
+| pilha inteira | 248,9 |
+| só o que o viewport cruza | **1,89** — **131x** |
+
+- [x] **Parado, o app queimava metade de um núcleo**: 498 ms de desenho por segundo de relógio, sem
+      ninguém tocar no teclado. Passou a 3,8 ms/s. É o número que explica o sintoma — a lentidão era
+      constante e independente da operação porque não dependia de operação nenhuma
+- [x] Digitando, os 249ms eram na **UI thread**, somados por cima da repaginação em background. Era
+      a fila
+- [x] O intervalo de folhas sai por **aritmética**, não varredura: a pilha é uniforme, então o
+      índice é uma divisão pelo passo (altura da folha mais o vão). Varrer as páginas para saber
+      quais entram custaria O(páginas) por quadro — o que o culling existe para não pagar
+- [x] **Rolar não chama `Render` por conta própria** — o Avalonia translada o que já foi desenhado.
+      Isso era invisível enquanto o desenho cobria tudo; com culling, seria folha em branco atrás da
+      rolagem. O `PageSurface` assina `ScrollViewer.OffsetProperty` e invalida, e solta a inscrição
+      no detach, como já fazia com o ViewModel e o timer
+- [x] `viewport: null` desenha a pilha inteira: é o que a medição usa para o "antes" e o que mantém
+      o `Render` utilizável fora de um `ScrollViewer` — um exportador PDF, por exemplo
+
+Registrado desta fatia:
+
+- **A conta de páginas visíveis não tem teste unitário.** `PageRenderer` vive no App e depende de
+  `Rect` do Avalonia; levá-la ao Core exigiria um tipo de geometria próprio só para isso. A
+  verificação é o benchmark mais a rolagem manual, e as bordas do intervalo — primeira e última
+  folha — são o que olhar
+- **Glyph runs cacheados continuam fora.** Com ~3 folhas por quadro em vez de 301, cachear seria
+  otimizar o que deixou de doer. Entra se a medição voltar a apontar para cá
+- **O caret ainda repinta a superfície inteira a cada 530ms.** Agora custa 1,89ms, então não vale
+  máquina para repintar só o retângulo dele
+
+### Cache de medição ✅
+
+`CachingTextMeasurer` no Core, decorando o `AvaloniaTextMeasurer`. Decorador, e não um dicionário
+dentro da implementação Avalonia, por dois motivos: a política de cache fica testável sem
+subsistema gráfico — que é a razão de `ITextMeasurer` existir — e um exportador PDF a herda junto
+com o motor de layout.
+
+Medido com `--measure-layout`, no documento de 301 páginas e 16.056 linhas da Fatia 6:
+
+| | tempo | ganho |
+|---|---|---|
+| sem cache | 909,7 ms | — |
+| cache frio (abrir o arquivo) | 308,7 ms | **2,9x** |
+| cache quente (uma tecla) | 68,1 ms | **13,4x** |
+
+- [x] O corpus do benchmark foi refeito **antes** de medir qualquer coisa. Com as dezoito palavras
+      que ele tinha, o cache acertaria quase 100% e estaria medindo a si mesmo. Agora são 12 mil
+      formas distintas sorteadas por Zipf, montadas por sílabas — o arquivo dá para abrir e ler —,
+      com um título a cada oito parágrafos. A repetição observada, **96,7%** (8.423 trechos
+      distintos em 258.002 medições), é a da língua, não a do gerador
+- [x] O acerto **não aloca**: `GetAlternateLookup<ReadOnlySpan<char>>` compara o span com as chaves
+      sem materializar string. Metade do ganho é essa; a outra metade é não construir o `TextLayout`
+- [x] Teto de 32.768 trechos por estilo, e ao estourar limpa em vez de despejar. O conjunto de
+      trabalho é o vocabulário do documento — menos de dez mil numa tese —, e o que passa disso são
+      os prefixos transitórios da busca binária que posiciona o caret. Um LRU custaria mais em
+      contabilidade do que economizaria num cache que quase nunca chega ao teto
+- [x] Só a largura é cacheada aqui. As métricas de linha dependem apenas do estilo, são meia dúzia
+      de entradas e já eram cacheadas por quem as produz
+- [x] Oito testes no Core, com um medidor que conta as chamadas que chegam embaixo: repetição não
+      desce, estilos não se confundem, a largura é idêntica à de quem não tem cache, e estourar o
+      teto volta a medir em vez de devolver número errado
+
+Registrado desta fatia:
+
+- **Os 68ms que sobram são o piso do rebuild completo**, não medição: 16.056 linhas a ~3,11 µs é
+  ~50ms, e o resto são as buscas no cache. A medição de texto deixou de ser o gargalo — quem é,
+  agora, é reconstruir o documento inteiro a cada tecla. **É a vez do reflow incremental**
+- **68ms por tecla cabe no teto de latência de 120ms** do `EditorViewModel`, então digitar num
+  documento de 300 páginas passa a acompanhar. O que ainda não cabe é o custo em lixo: cada tecla
+  ainda aloca a string do documento inteiro, a AST inteira e as linhas todas
+- **Abrir o arquivo continua custando 309ms** e sempre vai custar uma paginação completa — é o
+  único caminho que o reflow incremental não ajuda, e por isso o cache tinha de vir primeiro
+- **`--write-corpus <caminho>` grava esse documento em disco** e o App passou a aceitar um arquivo
+  na linha de comando, que é como se sente a latência em vez de só ler o número
 
 ---
 

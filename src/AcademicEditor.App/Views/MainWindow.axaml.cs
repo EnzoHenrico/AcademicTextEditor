@@ -20,7 +20,15 @@ public partial class MainWindow : Window
     private readonly EditorViewModel _viewModel;
     private readonly ShortcutDispatcher _shortcuts;
 
-    public MainWindow()
+    public MainWindow() : this(null)
+    {
+    }
+
+    /// <param name="initialFilePath">
+    /// Arquivo a abrir ao subir, vindo da linha de comando. <c>null</c> abre no documento de
+    /// exemplo.
+    /// </param>
+    public MainWindow(string? initialFilePath)
     {
         InitializeComponent();
 
@@ -30,8 +38,10 @@ public partial class MainWindow : Window
         // De propósito a variante CRLF, que é o caso difícil: o EditorDocument normaliza na
         // entrada, então trocar por UniqueFeaturesLf tem de dar exatamente a mesma tela. Se um dia
         // não der, a regressão aparece já na primeira execução em vez de esperar um teste.
+        // O medidor real por baixo, o cache por cima. Medido na Fatia 6: sem ele, 97,9% de uma
+        // repaginação de 300 páginas é medição de texto, e 96% dessas medições são repetição.
         _viewModel = new EditorViewModel(
-            new AvaloniaTextMeasurer(),
+            new CachingTextMeasurer(new AvaloniaTextMeasurer()),
             PageSettings.A4,
             Assets.Samples.Text.UniqueFeaturesCrLf);
 
@@ -50,6 +60,11 @@ public partial class MainWindow : Window
         _shortcuts.CommandFailed += (_, exception) => _viewModel.Report($"erro: {exception.Message}");
 
         UpdateTitle();
+
+        if (initialFilePath is not null)
+        {
+            _ = OpenFileAsync(initialFilePath);
+        }
     }
 
     private static KeyBindingRegistry BuildBindings()
@@ -123,9 +138,28 @@ public partial class MainWindow : Window
             return;
         }
 
-        await _viewModel.OpenAsync(path).ConfigureAwait(true);
-        UpdateTitle();
-        Surface.Focus();
+        await OpenFileAsync(path).ConfigureAwait(true);
+    }
+
+    /// <summary>Abre um caminho já escolhido — pelo seletor ou pela linha de comando.</summary>
+    /// <remarks>
+    /// Trata a falha aqui, e não deixa subir: a abertura por linha de comando não passa pelo
+    /// <c>ShortcutDispatcher</c>, então não há quem a reporte. Um arquivo que não existe tem de
+    /// virar mensagem no título, não uma exceção em Task descartada.
+    /// </remarks>
+    private async Task OpenFileAsync(string path)
+    {
+        try
+        {
+            await _viewModel.OpenAsync(path).ConfigureAwait(true);
+            UpdateTitle();
+            Surface.Focus();
+        }
+        catch (Exception exception)
+        {
+            _viewModel.Report($"erro ao abrir {Path.GetFileName(path)}: {exception.Message}");
+            UpdateTitle();
+        }
     }
 
     private void UpdateTitle()

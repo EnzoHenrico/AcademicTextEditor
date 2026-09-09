@@ -8,6 +8,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 namespace AcademicEditor.App.Controls;
 
@@ -27,6 +28,7 @@ public sealed class PageSurface : Control
     private readonly DispatcherTimer _blinkTimer;
 
     private EditorViewModel? _viewModel;
+    private ScrollViewer? _scroller;
     private bool _caretVisible = true;
     private CaretPosition? _scrolledTo;
 
@@ -77,8 +79,20 @@ public sealed class PageSurface : Control
         // iria para outro lugar.
         var caret = IsFocused && _caretVisible ? _viewModel.CaretPosition : (CaretPosition?)null;
 
-        PageRenderer.Render(context, _viewModel.Paginated, Bounds.Width, caret);
+        PageRenderer.Render(context, _viewModel.Paginated, Bounds.Width, caret, Viewport);
     }
+
+    /// <summary>
+    /// Retângulo visível, nas coordenadas desta superfície — <c>null</c> quando ela não vive
+    /// dentro de um <c>ScrollViewer</c>, e aí desenha-se tudo.
+    /// </summary>
+    /// <remarks>
+    /// A superfície é o conteúdo direto do <c>ScrollViewer</c>, então a conta é o deslocamento
+    /// dele mais o tamanho da janela de rolagem — sem transformar coordenada nenhuma.
+    /// </remarks>
+    private Rect? Viewport => _scroller is { } scroller
+        ? new Rect(scroller.Offset.X, scroller.Offset.Y, scroller.Viewport.Width, scroller.Viewport.Height)
+        : null;
 
     // O texto digitado vem daqui, e não de KeyDown.Key. KeyDown entrega a tecla física; este
     // evento entrega o caractere já composto pelo layout de teclado e pelo IME — é a diferença
@@ -179,6 +193,17 @@ public sealed class PageSurface : Control
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
+
+        _scroller = this.FindAncestorOfType<ScrollViewer>();
+
+        if (_scroller is not null)
+        {
+            // Rolar não chama Render por conta própria: o Avalonia translada o que já foi
+            // desenhado, sem pedir um quadro novo. Isso era invisível enquanto o desenho cobria a
+            // pilha inteira; com o culling, seria folha em branco atrás da rolagem.
+            _scroller.PropertyChanged += OnScrollerPropertyChanged;
+        }
+
         Focus();
     }
 
@@ -188,7 +213,23 @@ public sealed class PageSurface : Control
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         _blinkTimer.Stop();
+
+        if (_scroller is not null)
+        {
+            _scroller.PropertyChanged -= OnScrollerPropertyChanged;
+            _scroller = null;
+        }
+
         base.OnDetachedFromVisualTree(e);
+    }
+
+    // O deslocamento mudou: outras folhas entraram no quadro, e o quadro precisa ser refeito.
+    private void OnScrollerPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property == ScrollViewer.OffsetProperty)
+        {
+            InvalidateVisual();
+        }
     }
 
     protected override void OnGotFocus(FocusChangedEventArgs e)

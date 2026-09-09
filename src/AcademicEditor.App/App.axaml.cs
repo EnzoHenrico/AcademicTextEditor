@@ -16,7 +16,11 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            desktop.MainWindow = new MainWindow();
+            // `AcademicEditor tese.md` abre o arquivo direto. O primeiro argumento que não começa
+            // com '-' é o caminho; as opções são dos modos de diagnóstico, tratados no Program.
+            var path = desktop.Args?.FirstOrDefault(argument => !argument.StartsWith('-'));
+
+            desktop.MainWindow = new MainWindow(path);
         }
 
         base.OnFrameworkInitializationCompleted();

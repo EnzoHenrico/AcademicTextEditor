@@ -58,9 +58,25 @@ num exportador PDF/CLI depois. A única costura Core↔App é a interface `IText
   delta estrutural da piece list, sem copiar texto.
 - **Unidade interna do layout: pontos (1/72")**. Conversão para DIP (`pt * 96/72`) acontece
   **somente** na camada de renderização — é o que mantém o motor independente de tela.
-- **Layout roda em background** (`Task.Run`) e publica via `Dispatcher.UIThread.Post`.
+- **Reflow incremental por comparação de textos, não por rastreio de edições.** O que mudou sai do
+  prefixo e do sufixo comuns entre o texto publicado e o novo: exato por construção, sobrevive a
+  uma rajada coalescida num layout só, e trata colar/desfazer/refazer sem caso especial. Vale só
+  quando a alteração não cria nem apaga `\n` — aí os blocos são os mesmos um a um e só um é
+  requebrado; qualquer outra coisa pagina do zero. **O motor recusa em vez de arriscar:** offset
+  errado numa linha reaproveitada não quebra o desenho, quebra o caret, longe de onde errou.
+- **Layout roda em background** (`Task.Run`) e a continuação volta para a UI thread.
   `PaginatedDocument` e filhos são imutáveis: troca de referência atômica, sem locks.
+- **A repaginação coalesce; nunca cancela.** Um layout em voo por vez e um pedido pendente: quem
+  chega durante um layout só marca, e quem está rodando atende ao terminar. Cancelar o layout em
+  andamento — o que o debounce com teto fazia — deixava a tela parada enquanto uma tecla ficava
+  pressionada: bastava um layout passar do intervalo de repetição do teclado para cada tecla matar
+  a anterior, indefinidamente. Sem cancelamento, inanição não é possível, a taxa se auto-regula
+  pela duração do layout, e nada de trabalho é jogado fora.
 - **`Render(DrawingContext)` só desenha** — nunca faz I/O nem recalcula layout.
+- **`Render` desenha só as folhas que o viewport cruza**, e o intervalo sai por aritmética sobre o
+  passo da pilha, não por varredura. Sem isso, um documento de 301 páginas custava 249ms por quadro
+  na UI thread — e o timer do caret pagava isso duas vezes por segundo com o app parado. Corolário:
+  **rolar tem de invalidar o desenho**, porque o Avalonia só translada o que já foi desenhado.
 - **Texto digitado vem do evento `TextInput`**, não de `KeyDown.Key` (IME e layouts internacionais).
 - **Save é atômico**: escreve em `.tmp` no mesmo diretório e faz `File.Move(..., overwrite: true)`.
 - **`LaidOutLine` é lista de `LaidOutRun` desde o MVP**, mesmo com o parser emitindo um run
@@ -91,6 +107,11 @@ num exportador PDF/CLI depois. A única costura Core↔App é a interface `IText
   branco. Quem conta é `LineBreaks.ForEnter`, no Core, porque só o layout sabe onde a margem
   quebrou. Corolário: **a afinidade sobrevive à edição** — sem ela o caret volta sempre para o
   começo da linha de baixo e a tecla parece não ter feito nada.
+- **Medição de texto é cacheada por `(texto, estilo)`**, no `CachingTextMeasurer` do Core — não
+  dentro do medidor Avalonia, para a política ficar testável sem subsistema gráfico e para um
+  exportador PDF herdá-la. Medido: numa repaginação de 301 páginas sem cache, 98,1% do tempo está
+  dentro do `ITextMeasurer` e 96,7% das medições são repetição; o cache derruba a tecla de 910ms
+  para 68ms. Só a largura — as métricas de linha dependem só do estilo e não têm como crescer.
 - **Marcação de bloco é revelada na linha do caret** (`# ` num título), como Obsidian e Typora.
   Sem isso existiriam posições no arquivo sem posição na tela, e o Enter no início de um título
   tirava a formatação do texto. A marcação sai com o mesmo estilo do bloco: revelar muda a largura
