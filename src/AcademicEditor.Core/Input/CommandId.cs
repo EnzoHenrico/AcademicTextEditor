@@ -19,6 +19,7 @@ public static class EditorCommands
     public static readonly CommandId Save = new("editor.save");
     public static readonly CommandId SaveAs = new("editor.saveAs");
     public static readonly CommandId Open = new("editor.open");
+    public static readonly CommandId ExportPdf = new("editor.exportPdf");
     public static readonly CommandId Undo = new("editor.undo");
     public static readonly CommandId Redo = new("editor.redo");
     public static readonly CommandId Copy = new("editor.copy");

@@ -1087,13 +1087,14 @@ Registrado desta fatia:
   Fatia 1 corrigiu na tipografia, mas mudar margem move **toda** quebra de página do documento —
   decisão própria, não item de outra fatia. Fica devido, ao lado da medição do preset da ABNT
 
-### Fatia 3 — Exportação PDF ⬜
+### Fatia 3 — Exportação PDF ✅
 
-- [ ] `PdfExporter` no App, sobre `SKDocument.CreatePdf` do SkiaSharp, consumindo **o mesmo**
+- [x] `PdfExporter` no App, sobre `SKDocument.CreatePdf` do SkiaSharp, consumindo **o mesmo**
       `PaginatedDocument` que a tela desenha
-- [ ] Fontes embutidas e texto selecionável no arquivo gerado — um PDF de tese que não se pesquisa
-      não serve
-- [ ] `editor.exportPdf` no `KeyBindingRegistry`, com diálogo de arquivo ao lado de Abrir e Salvar
+- [x] Fontes embutidas (`/FontFile2`) e texto pesquisável (`/ToUnicode`) no arquivo gerado — um PDF
+      de tese que não se pesquisa não serve
+- [x] `editor.exportPdf` no `KeyBindingRegistry` em `Ctrl+P`, com diálogo de arquivo ao lado de
+      Abrir e Salvar
 
 **SkiaSharp, e não uma biblioteca de PDF de alto nível.** O Skia já vem com o Avalonia e molda o
 texto com o mesmo motor que desenha na tela: é o mesmo argumento que escolheu `TextLayout` em vez
@@ -1104,6 +1105,57 @@ licença Community com limite de receita.
 
 **O exportador mora no App, e isso não é concessão.** Ele consome `PaginatedDocument` de fora do
 Core — que é exatamente o que a regra "o Core nunca referencia o toolkit" existia para permitir.
+
+Registrado desta fatia:
+
+- **A aposta que abriu o projeto se pagou, e sem uma conversão sequer.** O canvas de PDF do Skia já
+  é em **pontos tipográficos**, que é a unidade interna do motor desde o MVP: este é o único
+  consumidor do layout que não multiplica nada — o `PageRenderer` multiplica por 96/72 porque a
+  tela é que tem outra unidade. O exportador não repagina, não remede e não conhece o Avalonia:
+  recebe o `PaginatedDocument` e desenha
+- **A lista de famílias tem de ser percorrida nome a nome, e isso não era óbvio.** A família do
+  preset é `"Times New Roman, Liberation Serif, DejaVu Serif"`; passá-la inteira ao Skia como um
+  nome não casa com fonte nenhuma, ele cai na padrão dele, e o PDF sai numa fonte diferente da que
+  está na tela. `SKFontManager.MatchFamily` devolve `null` quando não encontra — é o que permite
+  tentar a seguinte; `SKTypeface.FromFamilyName` não serviria, porque nunca falha. **Verificado na
+  saída:** nesta máquina, sem Times e sem Liberation, o PDF traz `/BaseFont /AAAAAA+DejaVuSerif` —
+  a terceira alternativa da Fatia 1 chegando ao papel
+- **O PDF desenha o documento, não o editor.** Ficam de fora o caret, o destaque da seleção, a
+  borda da folha e o filete tracejado do `\page`: os quatro existem para quem está escrevendo. O
+  marcador em especial já fez o trabalho dele quando a folha terminou ali. Testado pelo avesso —
+  uma folha só com o marcador não tem glifo a desenhar, e a prova é o arquivo não precisar embutir
+  fonte alguma
+- **Medido, com o tamanho do arquivo:**
+
+|  | tamanho |
+|---|---|
+| 1 folha | 213,1 KB |
+| 3 folhas | 214,0 KB |
+| 50 folhas | 236,3 KB |
+| 300 folhas | 356,1 KB |
+
+  **A fonte embutida domina e é constante por documento** — ~213KB fixos e ~0,48KB por folha. Uma
+  tese inteira sai em ~356KB, e não adianta cortar página para encolher o arquivo: o que pesa é o
+  subconjunto da fonte, que é justamente o que faz o PDF não depender das fontes de quem o abrir
+
+- **Exportar em background é seguro por construção**, e é a mesma propriedade que faz o layout
+  rodar fora da UI thread desde o MVP: `PaginatedDocument` é imutável do topo às folhas. Quem
+  continua digitando durante a exportação troca a referência; o que foi para o disco é o documento
+  que existia quando o autor pediu — o mesmo contrato do save
+- **`Ctrl+P`, e não um atalho de exportação.** É o que a mão procura para produzir um PDF, e não
+  disputa com nada: este programa não imprime nem vai imprimir — **o PDF é o caminho da impressão**,
+  e dois nomes para o mesmo botão só fariam o autor escolher entre eles
+- **Gravação atômica, como a do `.md`:** temporário no mesmo diretório e `File.Move` por cima.
+  Morrer no meio da escrita deixaria um PDF pela metade no lugar do anterior, que já não existiria
+  para recuperar
+- **`SkiaSharp` passou a ser referência declarada do App**, apesar de já chegar transitivamente
+  pelo `Avalonia.Skia`. A versão é a mesma que ele traz, então não há resolução nova a fazer —
+  o que muda é a dependência deixar de quebrar de forma obscura no dia em que o Avalonia trocar de
+  versão ou de mecanismo de desenho
+- **Nenhuma biblioteca de leitura de PDF nos testes, e não faz falta.** O que a fatia promete —
+  tamanho da folha, contagem de páginas, fonte embutida, texto pesquisável — são objetos **nomeados**
+  no arquivo, e procurá-los pelo nome é verificação direta, não proxy. O teste do rodízio de
+  famílias tira a fonte de verdade do próprio gerenciador do sistema, então não depende da máquina
 
 ### Fatia 4 — Alinhamento e justificação ⬜
 

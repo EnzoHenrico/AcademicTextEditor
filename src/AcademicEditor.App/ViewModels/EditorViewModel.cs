@@ -1,3 +1,5 @@
+using AcademicEditor.App.Rendering;
+
 using AcademicEditor.Core.IO;
 using AcademicEditor.Core.Layout;
 using AcademicEditor.Core.Layout.Model;
@@ -587,6 +589,34 @@ public sealed class EditorViewModel
         _undo.Break();
         UpdateBandTitle();
         Report($"salvo em {Path.GetFileName(path)}");
+    }
+
+    /// <summary>Grava o documento paginado como PDF.</summary>
+    /// <remarks>
+    /// <para>
+    /// Em background, e o que torna isso seguro é a mesma propriedade que faz o layout rodar fora
+    /// da UI thread desde o MVP: <see cref="PaginatedDocument"/> é imutável do topo às folhas.
+    /// Quem continua digitando durante a exportação troca a referência de <see cref="Paginated"/>;
+    /// o documento que foi para o disco é o que existia quando o autor pediu — que é o mesmo
+    /// contrato do save.
+    /// </para>
+    /// <para>
+    /// O exportador vive no App e consome o <see cref="PaginatedDocument"/> de fora do Core. É
+    /// exatamente o que a regra "o Core nunca referencia o toolkit" existia para permitir.
+    /// </para>
+    /// </remarks>
+    public async Task ExportPdfAsync(string path)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+
+        var document = Paginated;
+        var title = FilePath is { } current
+            ? Path.GetFileNameWithoutExtension(current)
+            : Path.GetFileNameWithoutExtension(path);
+
+        await Task.Run(() => PdfExporter.Export(document, path, title)).ConfigureAwait(true);
+
+        Report($"exportado para {Path.GetFileName(path)}");
     }
 
     public async Task OpenAsync(string path)

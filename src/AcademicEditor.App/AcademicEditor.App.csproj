@@ -11,6 +11,14 @@
     <PackageReference Include="Avalonia.Desktop" Version="12.1.2" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.2" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.2" />
+
+    <!--
+      O Skia já chega aqui pelo Avalonia.Skia, mas o exportador PDF usa a API dele diretamente
+      (SKDocument.CreatePdf). Depender de um pacote transitivo para uso direto quebra de forma
+      obscura no dia em que o Avalonia trocar de versão ou de mecanismo de desenho — a versão é a
+      mesma que ele já traz, então não há resolução nova a fazer, só a dependência declarada.
+    -->
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
     <PackageReference Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3">
       <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
       <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
