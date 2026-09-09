@@ -29,6 +29,21 @@ public sealed record PaginatedDocument(
     {
     }
 
+    /// <summary>A norma tipográfica com que estas linhas foram medidas.</summary>
+    /// <remarks>
+    /// Sai no resultado pelo mesmo motivo de <see cref="Settings"/>: as duas são o que produziu
+    /// este layout, e o <c>LayoutEngine</c> recusa reaproveitar linhas quando qualquer uma delas
+    /// mudou. Reaproveitar linhas medidas em outra fonte não quebra o desenho — quebra o caret, e
+    /// isso aparece longe de onde errou.
+    /// <para>
+    /// Propriedade <c>init</c>, e não parâmetro posicional, para que as construções que não se
+    /// importam com tipografia continuem com três argumentos. Entra na igualdade do record do
+    /// mesmo jeito, que é o que a guarda do reaproveitamento precisa.
+    /// </para>
+    /// </remarks>
+    public TypographyPreset Typography { get; init; } = TypographyPreset.Default;
+
     /// <summary>Documento sem nenhuma página é estado inválido: há sempre ao menos uma folha.</summary>
-    public static PaginatedDocument Empty(PageSettings settings) => new([new PageLayout([])], settings);
+    public static PaginatedDocument Empty(PageSettings settings, TypographyPreset? typography = null) =>
+        new([new PageLayout([])], settings) { Typography = typography ?? TypographyPreset.Default };
 }

@@ -22,6 +22,11 @@ public static class LayoutEngine
     /// reaproveitadas e só um bloco é requebrado; quando não serve, este método pagina do zero sem
     /// que o chamador precise saber a diferença.
     /// </param>
+    /// <param name="preset">
+    /// A norma tipográfica com que estas linhas são medidas. <c>null</c> usa o
+    /// <see cref="TypographyPreset.Default"/>. Sai carimbada no resultado, porque reaproveitar
+    /// linhas medidas com outra fonte não quebra o desenho — quebra o caret.
+    /// </param>
     /// <param name="cancellationToken">
     /// Verificado entre blocos. Paginar um documento longo custa, e a tecla seguinte já torna o
     /// resultado obsoleto — abandonar cedo devolve a thread em vez de terminar um cálculo que
@@ -33,6 +38,7 @@ public static class LayoutEngine
         ITextMeasurer measurer,
         int caretOffset = -1,
         LayoutReuse? reuse = null,
+        TypographyPreset? preset = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -40,8 +46,11 @@ public static class LayoutEngine
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(settings.ContentWidthPt);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(settings.ContentHeightPt);
 
+        var typography = preset ?? TypographyPreset.Default;
+
         if (reuse is not null
-            && Reuse(document, settings, measurer, caretOffset, reuse, cancellationToken) is { } incremental)
+            && Reuse(document, settings, measurer, caretOffset, reuse, typography, cancellationToken)
+                is { } incremental)
         {
             return incremental;
         }
@@ -53,12 +62,13 @@ public static class LayoutEngine
         // simplesmente sumiria da tela.
         if (document.Blocks.Count == 0)
         {
-            foreach (var line in LineBreaker.BreakIntoLines([], settings.ContentWidthPt, measurer))
+            foreach (var line in LineBreaker.BreakIntoLines(
+                [], settings.ContentWidthPt, measurer, includeMarkup: false, typography))
             {
                 breaker.AddLine(line);
             }
 
-            return new PaginatedDocument(breaker.Build(), settings);
+            return new PaginatedDocument(breaker.Build(), settings) { Typography = typography };
         }
 
         var revealed = TextRange.Empty;
@@ -82,7 +92,7 @@ public static class LayoutEngine
                 // encerra, como no Word. Cobre o trecho real do bloco — que não é sempre "\page",
                 // porque espaços em volta continuam valendo — e quem o trata como unidade
                 // indivisível é o CaretNavigator, pelo Kind.
-                var metrics = measurer.GetLineMetrics(TextStyle.Body);
+                var metrics = typography.Apply(measurer.GetLineMetrics(typography.Body));
 
                 breaker.AddLine(new LaidOutLine(
                     YPt: 0.0,
@@ -101,13 +111,14 @@ public static class LayoutEngine
                 block.Runs,
                 settings.ContentWidthPt,
                 measurer,
-                includeMarkup: reveals))
+                includeMarkup: reveals,
+                typography))
             {
                 breaker.AddLine(line);
             }
         }
 
-        return new PaginatedDocument(breaker.Build(), settings, revealed);
+        return new PaginatedDocument(breaker.Build(), settings, revealed) { Typography = typography };
     }
 
     /// <summary>
@@ -125,9 +136,12 @@ public static class LayoutEngine
         ITextMeasurer measurer,
         int caretOffset,
         LayoutReuse reuse,
+        TypographyPreset typography,
         CancellationToken cancellationToken)
     {
-        if (reuse.Previous.Settings != settings)
+        // Geometria e tipografia são as duas metades da norma, e nenhuma das duas sobrevive a uma
+        // mudança: as linhas anteriores foram quebradas noutra largura ou medidas noutra fonte.
+        if (reuse.Previous.Settings != settings || reuse.Previous.Typography != typography)
         {
             return null;
         }
@@ -187,7 +201,8 @@ public static class LayoutEngine
                     block.Runs,
                     settings.ContentWidthPt,
                     measurer,
-                    includeMarkup: true))
+                    includeMarkup: true,
+                    typography))
                 {
                     breaker.AddLine(line);
                 }
@@ -212,6 +227,9 @@ public static class LayoutEngine
 
         return cursor == previous.Length
             ? new PaginatedDocument(breaker.Build(), settings, new TextRange(dirty.SourceStart, dirty.SourceLength))
+            {
+                Typography = typography,
+            }
             : null;
     }
 

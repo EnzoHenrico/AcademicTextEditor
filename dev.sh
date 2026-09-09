@@ -16,6 +16,7 @@ readonly SLN="AcademicEditor.slnx"
 readonly CORE="src/AcademicEditor.Core/AcademicEditor.Core.csproj"
 readonly APP="src/AcademicEditor.App/AcademicEditor.App.csproj"
 readonly TESTS="tests/AcademicEditor.Core.Tests/AcademicEditor.Core.Tests.csproj"
+readonly APP_TESTS="tests/AcademicEditor.App.Tests/AcademicEditor.App.Tests.csproj"
 # Alvos do publish. Só estes dois são verificáveis daqui: o Linux roda direto e o Windows roda
 # pelo WSL. macOS compilaria, mas sem bundle .app nem assinatura o Gatekeeper recusa o binário,
 # e não há como confirmar isso desta máquina — está no estacionamento de ideias do roadmap.
@@ -70,7 +71,8 @@ guard_namespaces() {
     local violations=0
     local proj root_ns file rel dir expected declared
 
-    for proj in "src/AcademicEditor.Core" "src/AcademicEditor.App" "tests/AcademicEditor.Core.Tests"; do
+    for proj in "src/AcademicEditor.Core" "src/AcademicEditor.App" \
+                "tests/AcademicEditor.Core.Tests" "tests/AcademicEditor.App.Tests"; do
         root_ns="$(basename "$proj")"
 
         while IFS= read -r -d '' file; do
@@ -109,22 +111,29 @@ do_build() {
 # `dotnet test` retorna 0 quando não descobre nenhum teste — um gate que passa sem
 # rodar nada é pior que gate nenhum, porque dá falsa confiança. Por isso a saída é
 # inspecionada, não só o exit code.
+#
+# Os dois projetos rodam separados, e não de uma vez pela solução: assim a falha diz QUAL deles
+# ficou sem descobrir teste, que é justamente o que a checagem acima existe para pegar.
 do_test() {
-    step "Testes do Core"
+    local project name output
 
-    local output
-    if ! output="$(dotnet test "$TESTS" 2>&1)"; then
-        printf '%s\n' "$output" >&2
-        fail "Testes falharam."
-    fi
+    for project in "$TESTS" "$APP_TESTS"; do
+        name="$(basename "$(dirname "$project")")"
+        step "Testes ($name)"
 
-    printf '%s\n' "$output"
+        if ! output="$(dotnet test "$project" 2>&1)"; then
+            printf '%s\n' "$output" >&2
+            fail "Testes de $name falharam."
+        fi
 
-    if grep -q 'No test is available' <<<"$output"; then
-        fail "Nenhum teste foi descoberto — a descoberta de testes está quebrada."
-    fi
+        printf '%s\n' "$output"
 
-    ok "Testes verdes"
+        if grep -q 'No test is available' <<<"$output"; then
+            fail "Nenhum teste descoberto em $name — a descoberta de testes está quebrada."
+        fi
+
+        ok "$name verde"
+    done
 }
 
 do_run() {

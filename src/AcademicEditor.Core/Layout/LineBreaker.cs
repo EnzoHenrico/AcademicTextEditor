@@ -24,17 +24,22 @@ public static class LineBreaker
     /// Se a marcação de bloco entra na linha. Verdadeiro só para o bloco onde o caret está — é o
     /// que revela o <c>## </c> de um título enquanto se escreve nele.
     /// </param>
+    /// <param name="preset">
+    /// A norma tipográfica, de onde sai o entrelinhamento. <c>null</c> usa o
+    /// <see cref="TypographyPreset.Default"/>.
+    /// </param>
     public static List<LaidOutLine> BreakIntoLines(
         IReadOnlyList<InlineRun> runs,
         double maxWidthPt,
         ITextMeasurer measurer,
-        bool includeMarkup = false)
+        bool includeMarkup = false,
+        TypographyPreset? preset = null)
     {
         ArgumentNullException.ThrowIfNull(runs);
         ArgumentNullException.ThrowIfNull(measurer);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxWidthPt);
 
-        var builder = new LineAccumulator(runs, measurer, includeMarkup);
+        var builder = new LineAccumulator(runs, measurer, includeMarkup, preset ?? TypographyPreset.Default);
         var chunks = BuildChunks(runs, includeMarkup);
         var index = 0;
 
@@ -208,7 +213,8 @@ public static class LineBreaker
     private sealed class LineAccumulator(
         IReadOnlyList<InlineRun> runs,
         ITextMeasurer measurer,
-        bool includeMarkup)
+        bool includeMarkup,
+        TypographyPreset preset)
     {
         private readonly List<LaidOutRun> _lineRuns = [];
 
@@ -279,7 +285,7 @@ public static class LineBreaker
 
             if (_heightPt <= 0)
             {
-                GrowToFit(anchor?.Style ?? TextStyle.Body);
+                GrowToFit(anchor?.Style ?? preset.Body);
             }
 
             Lines.Add(new LaidOutLine(
@@ -313,9 +319,13 @@ public static class LineBreaker
 
         // A linha acompanha o maior estilo que a compõe: uma palavra em 20pt no meio de texto de
         // 11pt precisa de espaço vertical para os dois, senão os glifos se sobrepõem.
+        //
+        // O entrelinhamento da norma é aplicado AQUI, onde a altura da linha é decidida, e nunca no
+        // desenho: quem consome LaidOutLine — page breaker, caret, seleção, exportador — tem de ver
+        // a mesma caixa que a renderização vê. Ver TypographyPreset.Apply.
         private void GrowToFit(TextStyle style)
         {
-            var metrics = measurer.GetLineMetrics(style);
+            var metrics = preset.Apply(measurer.GetLineMetrics(style));
             _heightPt = Math.Max(_heightPt, metrics.HeightPt);
             _baselinePt = Math.Max(_baselinePt, metrics.BaselinePt);
         }

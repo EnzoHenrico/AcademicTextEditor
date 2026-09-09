@@ -44,10 +44,11 @@ public partial class MainWindow : Window
         _viewModel = new EditorViewModel(
             new CachingTextMeasurer(new AvaloniaTextMeasurer()),
             PageSettings.A4,
-            Assets.Samples.Text.UniqueFeaturesCrLf);
+            Assets.Samples.Text.UniqueFeaturesCrLf,
+            typography: TypographyPreset.Abnt);
 
         Surface.ViewModel = _viewModel;
-        _viewModel.DocumentStateChanged += (_, _) => UpdateTitle();
+        _viewModel.DocumentStateChanged += (_, _) => UpdateDocumentState();
 
         _shortcuts = new ShortcutDispatcher(this, BuildBindings());
         _shortcuts.Handle(EditorCommands.Undo, _viewModel.Undo);
@@ -64,7 +65,7 @@ public partial class MainWindow : Window
         // Task descartada e o autor acharia que gravou.
         _shortcuts.CommandFailed += (_, exception) => _viewModel.Report($"erro: {exception.Message}");
 
-        UpdateTitle();
+        UpdateDocumentState();
 
         if (initialFilePath is not null)
         {
@@ -158,7 +159,7 @@ public partial class MainWindow : Window
         }
 
         await _viewModel.SaveAsync().ConfigureAwait(true);
-        UpdateTitle();
+        UpdateDocumentState();
     }
 
     private async Task SaveAsAsync()
@@ -177,7 +178,7 @@ public partial class MainWindow : Window
         }
 
         await _viewModel.SaveAsAsync(path).ConfigureAwait(true);
-        UpdateTitle();
+        UpdateDocumentState();
     }
 
     private async Task OpenAsync()
@@ -208,22 +209,34 @@ public partial class MainWindow : Window
         try
         {
             await _viewModel.OpenAsync(path).ConfigureAwait(true);
-            UpdateTitle();
+            UpdateDocumentState();
             Surface.Focus();
         }
         catch (Exception exception)
         {
             _viewModel.Report($"erro ao abrir {Path.GetFileName(path)}: {exception.Message}");
-            UpdateTitle();
+            UpdateDocumentState();
         }
     }
 
-    private void UpdateTitle()
+    /// <summary>Reflete arquivo, "não salvo" e a última mensagem no título e na barra de status.</summary>
+    /// <remarks>
+    /// <b>A mensagem saiu do título.</b> O título é a identidade do documento — o que o gerenciador
+    /// de janelas mostra na barra de tarefas —, e uma mensagem ali some no instante em que a
+    /// seguinte chega, ou fica pendurada depois de deixar de valer. Um save que falha é a falha que
+    /// mais importa neste programa, e o lugar dela é a barra.
+    /// </remarks>
+    private void UpdateDocumentState()
     {
         var name = _viewModel.FilePath is { } path ? Path.GetFileName(path) : "documento sem título";
         var modified = _viewModel.IsModified ? " •" : string.Empty;
-        var status = _viewModel.StatusMessage.Length > 0 ? $"  —  {_viewModel.StatusMessage}" : string.Empty;
 
-        Title = $"{name}{modified}  —  AcademicEditor{status}";
+        Title = $"{name}{modified}  —  AcademicEditor";
+
+        StatusText.Text = _viewModel.StatusMessage;
+
+        // O caminho inteiro, e não só o nome: o título já dá o nome, e o que falta saber quando o
+        // mesmo nome existe em duas pastas é de qual delas este veio.
+        StatusPath.Text = _viewModel.FilePath ?? "não salvo em disco";
     }
 }

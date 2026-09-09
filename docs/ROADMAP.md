@@ -957,30 +957,77 @@ depois do cabeçalho de propósito:** ele é a prova da aposta que abriu o proje
 layout nasceu independente de tela —, e deixá-lo para o fim seria descobrir no fim se ela valia.
 Notas de rodapé e sumário fluem para dentro dele depois, sem tocá-lo.
 
-### Fatia 1 — Preset tipográfico e cromo da janela ⬜
+### Fatia 1 — Preset tipográfico e cromo da janela ✅
 
-O preset é **dívida da Fase 3**, não item novo: as Fatias 2 e 4.1 adiaram espaçamento entre blocos
-e entrelinhamento de 1,5 para "o preset de norma", e o comentário do `MarkupParser` ainda aponta
-para cá. Hoje o `AvaloniaTextMeasurer` usa `FontFamily.Default` e o corpo é 11pt — ou seja, o
-editor não tem família de fonte nenhuma, e a ABNT quer Times ou Arial 12pt com entrelinhamento
+O preset era **dívida da Fase 3**, não item novo: as Fatias 2 e 4.1 adiaram espaçamento entre
+blocos e entrelinhamento de 1,5 para "o preset de norma", e o comentário do `MarkupParser` ainda
+apontava para cá. O `AvaloniaTextMeasurer` usava `FontFamily.Default` e o corpo era 11pt — ou seja,
+o editor não tinha família de fonte nenhuma, e a ABNT quer Times ou Arial 12pt com entrelinhamento
 1,5.
 
-- [ ] `TypographyPreset` no Core (`Layout/`): família, corpo, escala de títulos, entrelinhamento e
-      espaço entre blocos. `TextStyle` ganha a família — é o que falta para medidor e renderizador
-      concordarem sobre qualquer fonte que não a padrão —, e `LineMetrics` ganha o fator de
-      entrelinhamento, aplicado onde a altura da linha é decidida e nunca no desenho. As constantes
-      de `MarkupParser` saem do parser: preset tipográfico não é decisão de quem lê a marcação
-- [ ] Cromo da janela: `DockPanel` em volta do `ScrollViewer`, com barra de status. `StatusMessage`
-      sai do título e vai para lá — o título passa a dizer só arquivo e "não salvo", que é o que um
-      título diz. É a mesma mudança estrutural que o menu da Fatia 7 vai precisar, feita uma vez
-- [ ] `tests/AcademicEditor.App.Tests/` criado e ligado ao `./dev.sh check`. O roadmap já acumulou
-      quatro argumentos a favor dele — o `availableSize` infinito, o teto de latência, o clipboard
-      e o `HitTest(CaretRectDip(c)) == c` —, e esta fase acrescenta barra de status, modal e menu,
-      tudo App. O primeiro teste é aquele round-trip: uma linha, e pega sinal trocado na hora
+- [x] `TypographyPreset` no Core (`Layout/`), ao lado do `PageSettings`: as duas metades da norma —
+      geometria da folha e tipografia do que cai nela. `TextStyle` ganhou a família, que era o que
+      faltava para medidor e renderizador concordarem sobre qualquer fonte que não a padrão, e as
+      constantes de tamanho saíram do `MarkupParser`: preset tipográfico não é decisão de quem lê a
+      marcação. `TypographyPreset.Abnt` é o que o aplicativo usa; `Default` é o do MVP, e é o que
+      mantém as medidas dos testes de layout em números redondos
+- [x] Cromo da janela: `DockPanel` em volta do `ScrollViewer`, com barra de status. `StatusMessage`
+      saiu do título e foi para lá; o título passou a dizer só arquivo e "não salvo", e a barra
+      ganhou o caminho completo à direita. É a mesma mudança estrutural que o menu da Fatia 7 vai
+      precisar, feita uma vez
+- [x] `tests/AcademicEditor.App.Tests/` criado e ligado ao `./dev.sh check` — 15 testes. O roadmap
+      já acumulava quatro argumentos a favor dele; o primeiro a virar teste foi o round-trip
+      `HitTest(CaretRectDip(c)) == c`, mais a costura de tradução do estilo para o typeface
 
-**Espaço entre blocos, com o desenho que a Fatia 4.1 deixou:** um `SpaceAfterPt` por bloco
-separaria toda linha de toda linha, porque um bloco aqui é uma linha da fonte. O espaço vem do
-preset aplicado à **linha em branco** — ela ganha altura própria, e não a do corpo.
+**O entrelinhamento é aplicado onde a altura da linha é decidida** — no `LineBreaker`, via
+`TypographyPreset.Apply` —, e nunca no desenho: quem consome `LaidOutLine` (page breaker, caret,
+seleção, futuro exportador) tem de ver a mesma caixa que a renderização vê. A folga extra fica
+**acima** da linha, como no Word: o que sobra abaixo da baseline não muda, então o texto não sobe
+meio espaço dentro da própria caixa. Consequência aceita: caret e retângulo de seleção ocupam a
+caixa inteira — que é o que se quer na seleção, linhas seguidas destacadas sem buraco entre elas.
+
+Registrado desta fatia:
+
+- **"Espaço entre blocos" saiu do preset, e a fatia descobriu por quê.** O item vinha da Fase 3 e
+  parecia trivial: `HeadingSpaceBeforePt`/`HeadingSpaceAfterPt`, que é o que a ABNT literalmente
+  manda (título separado do texto por um espaço de 1,5 antes e depois). Só que **neste editor o
+  autor digita essa linha em branco**, e ela é visível: o espaço automático somaria por cima do que
+  já está escrito, e apareceria na tela um espaço que ninguém digitou. É a mesma decisão da Fatia
+  4.1 vista pelo outro lado — o espaço entre blocos vem da linha em branco, e o que o preset
+  acrescenta é que ela agora cresce com o entrelinhamento, como qualquer linha. Some junto a
+  necessidade de `SpaceBeforePt`/`SpaceAfterPt` no `LaidOutLine` e de mexer no `PageBreaker`
+- **O reaproveitamento tinha um buraco, e ele foi fechado aqui.** `LayoutEngine.Reuse` só comparava
+  `PageSettings`. Trocar o preset sem tocar no texto produz `LayoutReuse.Between` **não nulo** — os
+  textos são idênticos, então não há `\n` no trecho alterado —, e com o caret dentro do último
+  bloco as duas guardas seguintes passam: linhas medidas na fonte antiga seriam reaproveitadas.
+  `PaginatedDocument` passou a carimbar o preset que o produziu, pelo mesmo motivo por que já
+  carregava o `PageSettings`, e a guarda virou "geometria **ou** tipografia mudou, pagina do zero"
+- **`HeadingSizes` é struct de seis campos, não lista.** O preset é comparado por valor nessa
+  guarda, e um `IReadOnlyList<double>` dentro de um record compara por **referência**: dois presets
+  iguais que comparassem diferente repaginariam do zero à toa, e dois diferentes que comparassem
+  iguais reaproveitariam linhas medidas em outra fonte — que é o erro caro, porque não quebra o
+  desenho, quebra o caret
+- **O parser passou a consultar `Layout/`.** É a única direção, além da AST, em que parser e layout
+  se conhecem, e é deliberada: resolver o corpo de um `## ` é decisão de norma, não de quem lê a
+  marcação. A alternativa — estilos semânticos resolvidos só na medição — mudaria a chave do cache
+  de medição e o renderizador, e não é desta fatia
+- **Times New Roman não existe em toda máquina, e foi verificado, não suposto.** A instalação WSL
+  desta máquina tem dezesseis fontes, todas DejaVu: nem a da Microsoft, nem a Liberation Serif.
+  Com dois nomes na lista, o preset da ABNT cairia ali na fonte padrão — **sem serifa** — e nada na
+  tela diria por quê. São três: `Times New Roman, Liberation Serif, DejaVu Serif`
+- **A família custa hash de string na chave do cache de medição**, que é `TextStyle`. São ~15
+  caracteres por busca contra os 258 mil acessos de uma repaginação completa: milissegundos contra
+  309ms. **Conta de guardanapo, não cronômetro** — se um dia doer, o remédio é um índice de família
+  no lugar do nome, não trocar o tipo do estilo
+- **O `App.Tests` não precisou de `Avalonia.Headless`.** `Rect`, `Point`, `FontFamily` e `Typeface`
+  se constroem sem plataforma inicializada, e as duas contas testadas dependem só da contagem de
+  folhas e da geometria da página. Nomear uma fonte não é resolvê-la contra o sistema
+- **Os números de desempenho do roadmap continuam sendo os do preset `Default`**, e o
+  `LayoutBenchmark` agora o fixa explicitamente para que não derivem em silêncio. Medir o preset da
+  ABNT é um número **novo**, não uma correção: corpo 12 em vez de 11 dá ~9% mais linhas, e
+  entrelinhamento 1,5 dá ~50% mais folhas para o mesmo texto. Fica devido
+- **Não houve conferência visual.** A máquina não tem ferramenta de captura de tela; o app foi
+  aberto e ficou de pé, e o resto está coberto por teste. A tela em si é para olhar no `./dev.sh run`
 
 ### Fatia 2 — Cabeçalho, rodapé e contagem ⬜
 
