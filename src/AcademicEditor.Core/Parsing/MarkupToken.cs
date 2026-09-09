@@ -1,3 +1,5 @@
+using AcademicEditor.Core.Parsing.Ast;
+
 namespace AcademicEditor.Core.Parsing;
 
 public enum MarkupTokenKind
@@ -29,12 +31,23 @@ public enum MarkupTokenKind
 /// <param name="ContentStart">Offset do texto útil: depois do <c>## </c> num heading, igual a
 /// <paramref name="LineStart"/> nos demais.</param>
 /// <param name="Level">Nível do heading (1 a 6); 0 nos demais.</param>
+/// <param name="Alignment">
+/// O alinhamento que a marcação da linha pediu, ou <c>null</c> quando não há marcação — e aí quem
+/// decide é o preset. Nulo e <paramref name="AlignmentLength"/> zero andam juntos.
+/// </param>
+/// <param name="AlignmentLength">
+/// Quantos caracteres a marcação de alinhamento ocupa no início da linha, incluindo o espaço que a
+/// separa do conteúdo. É o que o parser precisa para emitir o run de marcação sem reprocessar a
+/// linha — e para saber onde começa a marcação do heading, quando as duas convivem.
+/// </param>
 public readonly record struct MarkupToken(
     MarkupTokenKind Kind,
     int LineStart,
     int LineLength,
     int ContentStart,
-    int Level)
+    int Level,
+    TextAlignment? Alignment = null,
+    int AlignmentLength = 0)
 {
     /// <summary>Comprimento do texto útil. O conteúdo sempre termina junto com a linha.</summary>
     public int ContentLength => LineStart + LineLength - ContentStart;

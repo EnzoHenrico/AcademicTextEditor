@@ -66,22 +66,65 @@ public static class MarkupParser
     private static HeadingNode BuildHeading(string source, MarkupToken token, TypographyPreset preset)
     {
         var style = preset.Heading(token.Level);
-        var markupLength = token.ContentStart - token.LineStart;
+        var runs = new List<InlineRun>(3);
+
+        AddAlignmentMarkup(runs, source, token, style);
 
         // O "## " sai com o MESMO estilo do heading. Revelar a marcação passa a mudar a largura da
         // linha, não a altura dela — senão o documento inteiro subiria e desceria a cada vez que o
         // caret entrasse ou saísse de um título.
-        IReadOnlyList<InlineRun> runs =
-        [
-            new InlineRun(source.Substring(token.LineStart, markupLength), token.LineStart, style, IsMarkup: true),
-            .. BuildRuns(source, token, style),
-        ];
+        var markupStart = token.LineStart + token.AlignmentLength;
 
-        return new HeadingNode(token.Level, token.LineStart, token.LineLength, runs);
+        runs.Add(new InlineRun(source[markupStart..token.ContentStart], markupStart, style, IsMarkup: true));
+        runs.AddRange(BuildRuns(source, token, style));
+
+        return new HeadingNode(
+            token.Level,
+            token.LineStart,
+            token.LineLength,
+            runs,
+            token.Alignment ?? preset.Alignment);
     }
 
-    private static ParagraphNode BuildParagraph(string source, MarkupToken token, TypographyPreset preset) =>
-        new(token.LineStart, token.LineLength, BuildRuns(source, token, preset.Body));
+    private static ParagraphNode BuildParagraph(string source, MarkupToken token, TypographyPreset preset)
+    {
+        var style = preset.Body;
+        var runs = new List<InlineRun>(2);
+
+        AddAlignmentMarkup(runs, source, token, style);
+        runs.AddRange(BuildRuns(source, token, style));
+
+        return new ParagraphNode(
+            token.LineStart,
+            token.LineLength,
+            runs,
+            token.Alignment ?? preset.Alignment);
+    }
+
+    /// <summary>
+    /// O <c>:-: </c> entra como run de marcação, com o mesmo estilo do bloco.
+    /// </summary>
+    /// <remarks>
+    /// Mesma regra do <c>## </c> do heading, e pelo mesmo motivo: a marcação é revelada na linha do
+    /// caret, e revelar não pode mudar a altura da linha. Num título centralizado as duas convivem —
+    /// primeiro o alinhamento, depois o nível —, e cada uma é um run próprio porque cobrem trechos
+    /// distintos da fonte.
+    /// </remarks>
+    private static void AddAlignmentMarkup(
+        List<InlineRun> runs,
+        string source,
+        MarkupToken token,
+        TextStyle style)
+    {
+        if (token.AlignmentLength > 0)
+        {
+            runs.Add(new InlineRun(
+                source.Substring(token.LineStart, token.AlignmentLength),
+                token.LineStart,
+                style,
+                IsMarkup: true));
+        }
+    }
 
     // Todo bloco emite ao menos um run, ainda que de texto vazio. É dele que o line breaker tira
     // a altura e o offset da linha: sem run algum, "# " recém-digitado seria medido com a altura

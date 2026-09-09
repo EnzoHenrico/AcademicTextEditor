@@ -11,11 +11,16 @@ namespace AcademicEditor.Core.Parsing.Ast;
 /// </remarks>
 public abstract class BlockNode
 {
-    protected BlockNode(int sourceStart, int sourceLength, IReadOnlyList<InlineRun> runs)
+    protected BlockNode(
+        int sourceStart,
+        int sourceLength,
+        IReadOnlyList<InlineRun> runs,
+        TextAlignment alignment = TextAlignment.Left)
     {
         SourceStart = sourceStart;
         SourceLength = sourceLength;
         Runs = runs;
+        Alignment = alignment;
     }
 
     /// <summary>Offset do início do bloco no buffer, incluindo a marcação (o <c>#</c> de um heading).</summary>
@@ -25,4 +30,11 @@ public abstract class BlockNode
     public int SourceLength { get; }
 
     public IReadOnlyList<InlineRun> Runs { get; }
+
+    /// <summary>Como as linhas deste bloco se distribuem na largura útil.</summary>
+    /// <remarks>
+    /// Já vem resolvido: o parser aplica o padrão do preset quando a linha não traz marcação, e
+    /// quem quebra as linhas recebe um valor concreto em vez de ter de consultar a norma de novo.
+    /// </remarks>
+    public TextAlignment Alignment { get; }
 }

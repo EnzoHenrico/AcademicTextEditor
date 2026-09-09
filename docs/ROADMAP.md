@@ -1157,13 +1157,13 @@ Registrado desta fatia:
   no arquivo, e procurá-los pelo nome é verificação direta, não proxy. O teste do rodízio de
   famílias tira a fonte de verdade do próprio gerenciador do sistema, então não depende da máquina
 
-### Fatia 4 — Alinhamento e justificação ⬜
+### Fatia 4 — Alinhamento e justificação ✅
 
-- [ ] Marcação de bloco para alinhamento, revelada na linha do caret como o `# ` de um título:
+- [x] Marcação de bloco para alinhamento, revelada na linha do caret como o `# ` de um título:
       `:-: centralizado`, `-: à direita`, `:- à esquerda`; sem marcação vale o padrão do preset
       (justificado, na ABNT)
-- [ ] Passe de justificação sobre a linha já quebrada, distribuindo a sobra entre os vãos
-- [ ] `Ctrl+J` cicla os quatro alinhamentos, aplicado a **todo bloco que a seleção toca**
+- [x] Passe de justificação sobre a linha já quebrada, distribuindo a sobra entre os vãos
+- [x] `Ctrl+J` cicla os quatro alinhamentos, aplicado a **todo bloco que a seleção toca**
 
 **A sintaxe é a que o Markdown já usa para alinhar coluna de tabela** (`| :-- | :-: | --: |`):
 mesma ideia, mesmo símbolo, e o dois-pontos marca o lado a que o texto se prende. Sendo marcação no
@@ -1189,6 +1189,53 @@ Dois corolários, cada um com seu teste:
 - **Centralizar e alinhar à direita usam a extensão de tinta, não a crua.** Um espaço final
   invisível deslocaria a linha centralizada por um caractere — é a mesma distinção que `InkExtentPt`
   e `ExtentPt` já fazem nos testes de margem
+
+Registrado desta fatia:
+
+- **A invariante sobreviveu, e tem teste de propriedade.** Para toda linha justificada e **todo
+  offset que ela cobre**, `OffsetAtColumn(ColumnPt(offset)) == offset`. Era o risco inteiro da
+  fatia num assert: se o passe tivesse esticado o texto dentro de um run em vez de partir a linha
+  nos brancos, a posição desenhada deixaria de bater com o prefixo medido, e o caret pousaria fora
+  do lugar — longe de onde se errou
+- **O alinhamento é aplicado dentro do `LineBreaker`, e não num passe sobre o documento** como o
+  cabeçalho da Fatia 2. Dois motivos, e os dois só aparecem escrevendo: "a última linha do bloco
+  não é justificada" exige saber onde o bloco termina, que é justamente o que `BreakIntoLines`
+  devolve; e o reflow incremental requebra **um** bloco — se o alinhamento morasse fora, a linha
+  requebrada sairia desalinhada em relação às vizinhas. Há teste de identidade para isso, com o
+  documento justificado
+- **O destaque da seleção começava em zero, e o alinhamento transformou isso em bug.**
+  `SelectionGeometry` assumia que "origem da linha" e "margem esquerda" eram a mesma coisa — e
+  eram, até esta fatia. Numa linha centralizada, o destaque marcaria papel em branco antes da
+  primeira letra. Nenhum teste anterior pegaria: a premissa era verdadeira
+- **Medido, com o medidor determinístico, sobre a mesma tese de 300 páginas:**
+
+| | tempo | por linha |
+|---|---|---|
+| à esquerda | 29,4 ms | 2,75 µs |
+| justificado | 74,9 ms | 7,02 µs |
+
+  **2,55×**, e é o preço de manter a invariante: partir cada linha nas fronteiras de branco custa
+  uma string por segmento, contra uma por run. **Paga-se na abertura do arquivo, não por tecla** —
+  digitar passa pelo reflow incremental, que requebra um bloco só. Duas coisas apareceram na
+  medição: a primeira versão usava uma `List` que dobrava quatro vezes por linha (~16 segmentos
+  numa lista de capacidade 2), e passou a contar antes para alocar o array exato; e uma passada só
+  variava 15% entre execuções, mais do que a diferença que se queria enxergar, então o número
+  passou a ser o melhor de cinco
+- **`:-: # Título` funciona, e de graça.** O alinhamento é lido **antes** do resto da linha, então
+  heading e alinhamento não precisam se conhecer — o que sobra depois do prefixo continua sendo
+  classificado como sempre. É o que a ABNT pede para "RESUMO" e "REFERÊNCIAS"
+- **`Ctrl+J` é edição de texto, e é o que faz a feature caber sem máquina nova.** A marcação vai
+  para o arquivo, o undo funciona porque é edição como digitar, o reflow incremental já trata, e a
+  revelação na linha do caret já trata. O destino sai da **primeira** linha tocada, para que uma
+  seleção com alinhamentos mistos convirja para um só em vez de cada linha seguir o seu rodízio
+- **Linha em branco e `\page` ficam de fora do rodízio.** Marcar uma faria dela texto; marcar a
+  outra desfaria a quebra de página. Nenhuma das duas é o que se pede ao apertar `Ctrl+J`
+- **O `Ctrl+J` lê o buffer, não o layout publicado.** Aqui a análise é de **texto** — onde cada
+  linha começa —, e ler uma versão atrasada dele daria fronteiras erradas e uma edição no lugar
+  errado. Custa materializar o documento, o mesmo que salvar, e `Ctrl+J` não é caminho de tecla
+- **Corner registrado:** uma linha **vazia** com marcação de alinhamento não produz run nenhum, e
+  aí o caret pousa na margem esquerda em vez de no centro. É invisível na prática — com o caret na
+  linha a marcação é revelada, e aí há runs
 
 ### Fatia 5 — Extensões acadêmicas do markup ⬜
 

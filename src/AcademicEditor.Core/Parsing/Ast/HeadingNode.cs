@@ -9,8 +9,13 @@ namespace AcademicEditor.Core.Parsing.Ast;
 /// </remarks>
 public sealed class HeadingNode : BlockNode
 {
-    public HeadingNode(int level, int sourceStart, int sourceLength, IReadOnlyList<InlineRun> runs)
-        : base(sourceStart, sourceLength, runs)
+    public HeadingNode(
+        int level,
+        int sourceStart,
+        int sourceLength,
+        IReadOnlyList<InlineRun> runs,
+        TextAlignment alignment = TextAlignment.Left)
+        : base(sourceStart, sourceLength, runs, alignment)
     {
         Level = level;
     }

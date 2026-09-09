@@ -28,12 +28,18 @@ public static class LineBreaker
     /// A norma tipográfica, de onde sai o entrelinhamento. <c>null</c> usa o
     /// <see cref="TypographyPreset.Default"/>.
     /// </param>
+    /// <param name="alignment">
+    /// Como distribuir as linhas na largura. O alinhamento é aplicado <b>aqui</b>, e não num passe
+    /// do <c>LayoutEngine</c>, para que o reflow incremental o herde: requebrar o bloco sujo tem de
+    /// devolvê-lo alinhado como estava.
+    /// </param>
     public static List<LaidOutLine> BreakIntoLines(
         IReadOnlyList<InlineRun> runs,
         double maxWidthPt,
         ITextMeasurer measurer,
         bool includeMarkup = false,
-        TypographyPreset? preset = null)
+        TypographyPreset? preset = null,
+        TextAlignment alignment = TextAlignment.Left)
     {
         ArgumentNullException.ThrowIfNull(runs);
         ArgumentNullException.ThrowIfNull(measurer);
@@ -114,6 +120,8 @@ public static class LineBreaker
         // Sempre fecha a última linha, mesmo vazia: um parágrafo em branco ou um heading recém
         // aberto ocupam uma linha na página, e o caret precisa de uma linha onde pousar.
         builder.EndLine();
+
+        LineAlignment.Apply(builder.Lines, alignment, maxWidthPt, measurer);
 
         return builder.Lines;
     }

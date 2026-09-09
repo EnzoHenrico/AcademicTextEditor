@@ -86,7 +86,8 @@ public sealed class TypographyPresetTests
             "Fonte X",
             BodySizePt: 13.0,
             new HeadingSizes(30.0, 28.0, 26.0, 24.0, 22.0, 20.0),
-            LineSpacing: 1.0);
+            LineSpacing: 1.0,
+            TextAlignment.Left);
 
         var blocks = MarkupParser.Parse("# Título\ncorpo", preset).Blocks;
 

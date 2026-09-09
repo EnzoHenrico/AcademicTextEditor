@@ -63,7 +63,7 @@ public static class LayoutEngine
         if (document.Blocks.Count == 0)
         {
             foreach (var line in LineBreaker.BreakIntoLines(
-                [], settings.ContentWidthPt, measurer, includeMarkup: false, typography))
+                [], settings.ContentWidthPt, measurer, includeMarkup: false, typography, typography.Alignment))
             {
                 breaker.AddLine(line);
             }
@@ -112,7 +112,8 @@ public static class LayoutEngine
                 settings.ContentWidthPt,
                 measurer,
                 includeMarkup: reveals,
-                typography))
+                typography,
+                block.Alignment))
             {
                 breaker.AddLine(line);
             }
@@ -202,7 +203,8 @@ public static class LayoutEngine
                     settings.ContentWidthPt,
                     measurer,
                     includeMarkup: true,
-                    typography))
+                    typography,
+                    block.Alignment))
                 {
                     breaker.AddLine(line);
                 }

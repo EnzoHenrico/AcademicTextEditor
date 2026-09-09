@@ -6,8 +6,12 @@ namespace AcademicEditor.Core.Parsing.Ast;
 /// </summary>
 public sealed class ParagraphNode : BlockNode
 {
-    public ParagraphNode(int sourceStart, int sourceLength, IReadOnlyList<InlineRun> runs)
-        : base(sourceStart, sourceLength, runs)
+    public ParagraphNode(
+        int sourceStart,
+        int sourceLength,
+        IReadOnlyList<InlineRun> runs,
+        TextAlignment alignment = TextAlignment.Left)
+        : base(sourceStart, sourceLength, runs, alignment)
     {
     }
 }

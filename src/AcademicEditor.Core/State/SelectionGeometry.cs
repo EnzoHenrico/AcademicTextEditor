@@ -89,7 +89,11 @@ public static class SelectionGeometry
         // Linhas inteiramente dentro do trecho não medem nada: a esquerda é a origem da linha e a
         // direita é a tinta que já está posicionada. Num Ctrl+A de 300 páginas, é a diferença
         // entre dezesseis mil medições e nenhuma.
-        var leftPt = start <= line.SourceStart ? 0.0 : CaretGeometry.ColumnPt(line, start, measurer);
+        //
+        // "Origem da linha" é onde o primeiro run começa, e não zero: numa linha centralizada ou
+        // alinhada à direita o texto não encosta na margem esquerda, e um destaque que começasse
+        // ali marcaria papel em branco antes da primeira letra.
+        var leftPt = start <= line.SourceStart ? StartPt(line) : CaretGeometry.ColumnPt(line, start, measurer);
         var rightPt = end >= line.SourceEnd ? InkEndPt(line) : CaretGeometry.ColumnPt(line, end, measurer);
 
         if (rightPt > leftPt)
@@ -111,6 +115,9 @@ public static class SelectionGeometry
                 line.HeightPt)
             : null;
     }
+
+    /// <summary>Onde a linha começa. Sem medir: o primeiro run já está posicionado.</summary>
+    private static double StartPt(LaidOutLine line) => line.Runs.Count == 0 ? 0.0 : line.Runs[0].XPt;
 
     /// <summary>Onde a tinta da linha termina. Sem medir: os runs já estão posicionados.</summary>
     private static double InkEndPt(LaidOutLine line) =>

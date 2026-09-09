@@ -1,3 +1,5 @@
+using AcademicEditor.Core.Parsing.Ast;
+
 namespace AcademicEditor.Core.Parsing;
 
 /// <summary>
@@ -7,6 +9,18 @@ public static class MarkupTokenizer
 {
     /// <summary>Marcador de quebra de página explícita, sozinho numa linha.</summary>
     public const string PageBreakMarker = "\\page";
+
+    /// <summary>Marcação de alinhamento, no início da linha e seguida de espaço.</summary>
+    /// <remarks>
+    /// É a notação que o próprio Markdown usa para alinhar coluna de tabela — <c>| :-- | :-: | --: |</c>
+    /// —, e o dois-pontos marca o lado a que o texto se prende. Não há marcação para justificado:
+    /// ele é o padrão da norma, e o estado "sem marcação" é como se volta a ele.
+    /// </remarks>
+    public const string CenterMarker = ":-:";
+
+    public const string LeftMarker = ":-";
+
+    public const string RightMarker = "-:";
 
     private const int MaxHeadingLevel = 6;
 
@@ -59,25 +73,86 @@ public static class MarkupTokenizer
             return new MarkupToken(MarkupTokenKind.PageBreak, lineStart, lineLength, lineStart, Level: 0);
         }
 
+        // O alinhamento é lido ANTES do resto porque modifica a linha inteira, e o que sobra depois
+        // dele continua sendo classificado como sempre. É o que faz ":-: # Título" ser um título
+        // centralizado sem que heading e alinhamento precisem se conhecer.
+        var alignmentLength = ReadAlignment(line, out var alignment);
+        var rest = line[alignmentLength..];
+        var restStart = lineStart + alignmentLength;
+
         var level = 0;
-        while (level < line.Length && line[level] == '#')
+        while (level < rest.Length && rest[level] == '#')
         {
             level++;
         }
 
         // Sem espaço depois dos '#', não é heading: "#hashtag" é texto, e é o que o autor espera.
         // Mais de seis níveis também não é heading — a marcação para no ######.
-        if (level == 0 || level > MaxHeadingLevel || level >= line.Length || line[level] != ' ')
+        if (level == 0 || level > MaxHeadingLevel || level >= rest.Length || rest[level] != ' ')
         {
-            return new MarkupToken(MarkupTokenKind.Text, lineStart, lineLength, lineStart, Level: 0);
+            return new MarkupToken(
+                MarkupTokenKind.Text, lineStart, lineLength, restStart, Level: 0, alignment, alignmentLength);
         }
 
         var contentStart = level;
-        while (contentStart < line.Length && line[contentStart] == ' ')
+        while (contentStart < rest.Length && rest[contentStart] == ' ')
         {
             contentStart++;
         }
 
-        return new MarkupToken(MarkupTokenKind.Heading, lineStart, lineLength, lineStart + contentStart, level);
+        return new MarkupToken(
+            MarkupTokenKind.Heading,
+            lineStart,
+            lineLength,
+            restStart + contentStart,
+            level,
+            alignment,
+            alignmentLength);
+    }
+
+    /// <summary>
+    /// Lê a marcação de alinhamento no início da linha e devolve quantos caracteres ela ocupa,
+    /// espaço de separação incluso.
+    /// </summary>
+    /// <remarks>
+    /// <c>:-:</c> é testado antes de <c>:-</c>: o prefixo mais curto casaria primeiro e roubaria a
+    /// marcação de centro. E, como no heading, <b>sem o espaço não é marcação</b> — o que garante
+    /// que uma linha começando por dois-pontos e hífen continue sendo texto.
+    /// </remarks>
+    public static int ReadAlignment(ReadOnlySpan<char> line, out TextAlignment? alignment)
+    {
+        int marker;
+
+        if (line.StartsWith(CenterMarker, StringComparison.Ordinal))
+        {
+            (alignment, marker) = (TextAlignment.Center, CenterMarker.Length);
+        }
+        else if (line.StartsWith(LeftMarker, StringComparison.Ordinal))
+        {
+            (alignment, marker) = (TextAlignment.Left, LeftMarker.Length);
+        }
+        else if (line.StartsWith(RightMarker, StringComparison.Ordinal))
+        {
+            (alignment, marker) = (TextAlignment.Right, RightMarker.Length);
+        }
+        else
+        {
+            alignment = null;
+            return 0;
+        }
+
+        if (marker >= line.Length || line[marker] != ' ')
+        {
+            alignment = null;
+            return 0;
+        }
+
+        var end = marker;
+        while (end < line.Length && line[end] == ' ')
+        {
+            end++;
+        }
+
+        return end;
     }
 }

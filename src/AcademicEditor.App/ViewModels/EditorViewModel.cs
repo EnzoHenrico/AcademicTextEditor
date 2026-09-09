@@ -453,6 +453,64 @@ public sealed class EditorViewModel
 
     public void SelectAll() => SelectRange(new TextRange(0, _document.Length));
 
+    /// <summary>Avança o alinhamento de todo bloco que a seleção toca.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>É uma edição de texto como outra qualquer</b>, e é o que faz a feature inteira caber sem
+    /// máquina nova: a marcação vai para o arquivo, o undo funciona porque é edição, e a
+    /// repaginação seguinte já a revela na linha do caret.
+    /// </para>
+    /// <para>
+    /// O texto vem do <b>buffer</b>, e não do último layout publicado. Aqui a análise é de texto —
+    /// onde cada linha começa —, e ler uma versão atrasada dele daria fronteiras erradas e uma
+    /// edição no lugar errado. Custa materializar o documento, o mesmo que salvar; <c>Ctrl+J</c>
+    /// não é caminho de tecla.
+    /// </para>
+    /// </remarks>
+    public void CycleAlignment()
+    {
+        var source = _document.CreateSnapshot().GetText();
+        var edits = BlockAlignment.Next(source, _selection.Range);
+
+        if (edits.Count == 0)
+        {
+            return;
+        }
+
+        var before = Caret.Offset;
+        var applied = new List<PieceEdit>(edits.Count * 2);
+
+        // De trás para a frente, que é como BlockAlignment as devolve: cada troca acontece num
+        // texto que as anteriores ainda não deslocaram.
+        foreach (var edit in edits)
+        {
+            if (edit.Length > 0)
+            {
+                applied.Add(_document.Delete(edit.Start, edit.Length));
+            }
+
+            if (edit.Replacement.Length > 0)
+            {
+                applied.Add(_document.Insert(edit.Start, edit.Replacement));
+            }
+        }
+
+        var active = BlockAlignment.Reposition(before, edits);
+
+        // Um grupo só: um Ctrl+Z desfaz o alinhamento inteiro, e não linha por linha.
+        _undo.RecordCompound(applied, before, active);
+
+        // A seleção sobrevive, sobre o mesmo texto: sem repor os dois offsets ela escorregaria
+        // alguns caracteres a cada Ctrl+J, e o segundo toque pegaria outras linhas.
+        _selection = new Selection(
+            BlockAlignment.Reposition(_selection.Anchor, edits),
+            new Caret(active, 0.0));
+
+        _caretColumnStale = true;
+        MarkModified();
+        SchedulePagination();
+    }
+
     /// <summary>Seleciona um trecho e põe o caret no fim dele.</summary>
     /// <remarks>
     /// <c>Upstream</c>: numa quebra por largura o fim do trecho é também o começo da linha de
