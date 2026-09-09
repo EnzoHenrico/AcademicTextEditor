@@ -117,7 +117,8 @@ Duas coisas que a fatia expôs e ficam registradas:
 - **Falta espaçamento entre blocos.** As linhas saem com o entrelinhamento natural da fonte e
   nada separa um parágrafo do seguinte, então um heading encosta no corpo. Não é bug do motor:
   `BlockNode` simplesmente não tem `SpaceBeforePt`/`SpaceAfterPt`, e entrelinhamento de 1,5 é
-  parte do preset de norma da Fase 5. Entra junto com ele
+  parte do preset de norma — que, quando a Fase 5 mudou de assunto, foi parar na Fase 6,
+  Fatia 1. Entra junto com ele
 - **O bug que só o app real pegou:** dentro de um `ScrollViewer` o `availableSize` do
   `MeasureOverride` chega infinito, e devolvê-lo aborta o passo de layout. Nenhum teste do Core
   pegaria isso — é o primeiro argumento concreto a favor do `tests/AcademicEditor.App.Tests/`
@@ -243,8 +244,8 @@ Registrado desta fatia:
   linhas de volta é trabalho de importação/exportação, não do editor
 - **Espaçamento entre blocos muda de significado.** Com um `ParagraphNode` por linha de fonte, um
   `SpaceAfterPt` automático por bloco separaria toda linha de toda linha. O espaço entre
-  parágrafos passa a vir da linha em branco e do preset de norma da Fase 5 — o item continua lá,
-  com outro desenho
+  parágrafos passa a vir da linha em branco e do preset de norma — hoje na Fase 6, Fatia 1 — e o
+  item continua lá, com outro desenho
 - **Avalonia 12 renomeou o que a fatia precisava:** `OnGotFocus`/`OnLostFocus` recebem
   `FocusChangedEventArgs`, e não há `Control.BringIntoView(Rect)` — a rolagem se pede levantando
   `RequestBringIntoViewEvent`
@@ -946,13 +947,178 @@ Registrado desta fatia:
 
 ## Fase 6 — Documento acadêmico ⬜
 
-- [ ] Cabeçalho/rodapé (populando os campos reservados desde a Fase 3)
-- [ ] Numeração de página
-- [ ] Extensões acadêmicas do markup: notas de rodapé, `[@cite]`, `$math$`, legendas
-- [ ] Notas de rodapé no layout (segundo passe do page-breaker)
-- [ ] Sumário automático (dois passes de layout)
-- [ ] **Exportação PDF**, consumindo o mesmo `PaginatedDocument` — possível porque o motor
-      de layout nasceu independente de tela
+**Objetivo:** o que sai do editor passa a ser um trabalho acadêmico, e não um texto paginado —
+folha numerada, tipografia de norma, PDF, e as extensões de markup que uma tese usa.
+
+Sete fatias, nenhuma com mais de três tópicos. A ordem tem duas dependências reais e o resto é
+independente: a Fatia 2 precisa do preset da Fatia 1 para saber com que fonte desenhar o
+cabeçalho, e a Fatia 7 é a última porque um menu só oferece o que já existe. **O PDF vem logo
+depois do cabeçalho de propósito:** ele é a prova da aposta que abriu o projeto — o motor de
+layout nasceu independente de tela —, e deixá-lo para o fim seria descobrir no fim se ela valia.
+Notas de rodapé e sumário fluem para dentro dele depois, sem tocá-lo.
+
+### Fatia 1 — Preset tipográfico e cromo da janela ⬜
+
+O preset é **dívida da Fase 3**, não item novo: as Fatias 2 e 4.1 adiaram espaçamento entre blocos
+e entrelinhamento de 1,5 para "o preset de norma", e o comentário do `MarkupParser` ainda aponta
+para cá. Hoje o `AvaloniaTextMeasurer` usa `FontFamily.Default` e o corpo é 11pt — ou seja, o
+editor não tem família de fonte nenhuma, e a ABNT quer Times ou Arial 12pt com entrelinhamento
+1,5.
+
+- [ ] `TypographyPreset` no Core (`Layout/`): família, corpo, escala de títulos, entrelinhamento e
+      espaço entre blocos. `TextStyle` ganha a família — é o que falta para medidor e renderizador
+      concordarem sobre qualquer fonte que não a padrão —, e `LineMetrics` ganha o fator de
+      entrelinhamento, aplicado onde a altura da linha é decidida e nunca no desenho. As constantes
+      de `MarkupParser` saem do parser: preset tipográfico não é decisão de quem lê a marcação
+- [ ] Cromo da janela: `DockPanel` em volta do `ScrollViewer`, com barra de status. `StatusMessage`
+      sai do título e vai para lá — o título passa a dizer só arquivo e "não salvo", que é o que um
+      título diz. É a mesma mudança estrutural que o menu da Fatia 7 vai precisar, feita uma vez
+- [ ] `tests/AcademicEditor.App.Tests/` criado e ligado ao `./dev.sh check`. O roadmap já acumulou
+      quatro argumentos a favor dele — o `availableSize` infinito, o teto de latência, o clipboard
+      e o `HitTest(CaretRectDip(c)) == c` —, e esta fase acrescenta barra de status, modal e menu,
+      tudo App. O primeiro teste é aquele round-trip: uma linha, e pega sinal trocado na hora
+
+**Espaço entre blocos, com o desenho que a Fatia 4.1 deixou:** um `SpaceAfterPt` por bloco
+separaria toda linha de toda linha, porque um bloco aqui é uma linha da fonte. O espaço vem do
+preset aplicado à **linha em branco** — ela ganha altura própria, e não a do corpo.
+
+### Fatia 2 — Cabeçalho, rodapé e contagem ⬜
+
+- [ ] `HeaderFooterSettings` no Core: três campos (esquerda, centro, direita) para o cabeçalho e
+      três para o rodapé, com os marcadores `{page}`, `{pages}` e `{title}`. É o que finalmente
+      preenche `HeaderReservedHeightPt`/`FooterReservedHeightPt`, zerados no `PageSettings` desde a
+      Fase 3 justamente à espera disto
+- [ ] Numeração de página — é o `{page}`, e não um item à parte: numerar é o caso mais simples do
+      mesmo template. Padrão ABNT: canto superior direito
+- [ ] Contador de caracteres e palavras na barra de status da janela (a da Fatia 1 — não confundir
+      com o rodapé da página, que é o item acima)
+
+**Cabeçalho e rodapé NÃO entram em `PageLayout.Lines`; `PageLayout` ganha campos próprios.**
+`CaretGeometry.FindLine` varre exatamente essa lista mapeando offset → linha, e `LayoutEngine.Reuse`
+exige que ela case um-para-um com os blocos e seja consumida até o fim. Uma linha de cabeçalho não
+tem offset no buffer: ela capturaria o caret e derrubaria o reflow incremental — e, como toda falha
+de offset, apareceria longe de onde nasceu. Com campo próprio, nada do caret é tocado, por
+construção.
+
+**`{pages}` só se sabe depois de paginar**, e é o que parece um ciclo e não é: a altura reservada
+não depende do texto do cabeçalho, então a contagem total entra num segundo passe que só substitui
+texto, sem repaginar nada.
+
+**A contagem roda no `Task.Run` da paginação**, não na UI thread. Contar é O(n) e o documento de
+referência tem ~1MB — mas aquele `Task.Run` já materializa a fonte inteira para paginar, então
+contar ali custa a passada e nada mais, e já sai coalescida pelo mesmo laço. Decidido junto: conta
+sobre o buffer cru, marcação inclusa (é o simples e o previsível); por **code point**, não por
+unidade UTF-16, senão um emoji conta dois; e com um trecho selecionado a barra mostra o trecho,
+como todo editor faz.
+
+### Fatia 3 — Exportação PDF ⬜
+
+- [ ] `PdfExporter` no App, sobre `SKDocument.CreatePdf` do SkiaSharp, consumindo **o mesmo**
+      `PaginatedDocument` que a tela desenha
+- [ ] Fontes embutidas e texto selecionável no arquivo gerado — um PDF de tese que não se pesquisa
+      não serve
+- [ ] `editor.exportPdf` no `KeyBindingRegistry`, com diálogo de arquivo ao lado de Abrir e Salvar
+
+**SkiaSharp, e não uma biblioteca de PDF de alto nível.** O Skia já vem com o Avalonia e molda o
+texto com o mesmo motor que desenha na tela: é o mesmo argumento que escolheu `TextLayout` em vez
+de somar avanços de glifo na Fatia 2 da Fase 3 — onde medir e desenhar discordam, o texto vaza da
+folha, e aqui discordar significa entregar um PDF diferente do que o autor viu. Uma biblioteca com
+motor de layout próprio (QuestPDF) competiria com o nosso e teria de ser contornada, além da
+licença Community com limite de receita.
+
+**O exportador mora no App, e isso não é concessão.** Ele consome `PaginatedDocument` de fora do
+Core — que é exatamente o que a regra "o Core nunca referencia o toolkit" existia para permitir.
+
+### Fatia 4 — Alinhamento e justificação ⬜
+
+- [ ] Marcação de bloco para alinhamento, revelada na linha do caret como o `# ` de um título:
+      `:-: centralizado`, `-: à direita`, `:- à esquerda`; sem marcação vale o padrão do preset
+      (justificado, na ABNT)
+- [ ] Passe de justificação sobre a linha já quebrada, distribuindo a sobra entre os vãos
+- [ ] `Ctrl+J` cicla os quatro alinhamentos, aplicado a **todo bloco que a seleção toca**
+
+**A sintaxe é a que o Markdown já usa para alinhar coluna de tabela** (`| :-- | :-: | --: |`):
+mesma ideia, mesmo símbolo, e o dois-pontos marca o lado a que o texto se prende. Sendo marcação no
+arquivo, o alinhamento persiste no `.md`, o undo sai de graça porque é edição de texto, e o reflow
+incremental e o "revelar por bloco" já o tratam sem uma linha de código nova.
+
+**Alinhamento é propriedade de bloco, não de trecho.** Centralizar meio parágrafo não quer dizer
+nada; por isso o `Ctrl+J` age sobre os blocos que a seleção cruza, inteiros.
+
+**Justificar exige partir os runs no branco — é o ponto de risco da fatia.** `CaretGeometry.ColumnPt`
+e `OffsetInRun` medem prefixos **dentro** do run, e o `LineAccumulator` funde chunks contíguos:
+`"abc def"` é um run só, com o espaço dentro. Esticar esse espaço faz a posição desenhada divergir
+do prefixo medido, e derivam juntos o caret, a seleção e o hit test — e o `PageRenderer` sequer
+esticaria, porque desenha o run com um `TextLayout`. A invariante a preservar é **dentro de um run,
+prefixo medido = posição desenhada**: o passe parte a linha nas fronteiras de branco e reposiciona
+`XPt`, em vez de mexer no texto. Custa mais runs por linha, que é o que o culling da Fase 4 já
+absorve.
+
+Dois corolários, cada um com seu teste:
+
+- **O branco pendurado pela tolerância da Fatia 5.3 não entra no esticamento.** Ele já está fora da
+  margem por decisão; esticá-lo levaria a linha adiante do papel
+- **Centralizar e alinhar à direita usam a extensão de tinta, não a crua.** Um espaço final
+  invisível deslocaria a linha centralizada por um caractere — é a mesma distinção que `InkExtentPt`
+  e `ExtentPt` já fazem nos testes de margem
+
+### Fatia 5 — Extensões acadêmicas do markup ⬜
+
+- [ ] Notas de rodapé: a sintaxe, mais o segundo passe do page-breaker
+- [ ] `[@cite]` e `$math$` **parseados e estilizados, não tipografados**
+- [ ] Legendas
+
+**O que "pronto" significa aqui, dito antes de começar**, senão a fatia engole a fase: `$math$` sai
+como run de estilo próprio, não composto — não há quem tipografe TeX no Avalonia, e um compositor
+de fórmulas é uma fase inteira sozinho. `[@cite]` resolve contra um `.bib` simples e sai como
+`(Silva, 2020)`; estilo CSL e lista de referências formatada ficam para depois.
+
+**A nota de rodapé é iterativa por natureza:** ela encolhe a altura útil da folha onde cai, o que
+pode empurrar a própria chamada para a folha seguinte, que leva a nota junto. O segundo passe
+precisa de uma regra de parada escrita antes do código.
+
+### Fatia 6 — Sumário automático ⬜
+
+- [ ] `\toc` como marcador de bloco, reusando o que o `\page` já construiu
+- [ ] Dois passes de layout, com o número de passes **fixo**
+
+**`\toc` reusa `BlockMarkers` e o caminho do `PageBreakNode` inteiro:** linha atômica desenhada,
+caret que pousa nela como unidade, teclas de apagar que removem o marcador inteiro. Nada disso
+precisa ser escrito de novo.
+
+**Mesmo ponto fixo das notas:** inserir o sumário empurra o texto e muda os números de página que o
+próprio sumário mostra. Dois passes, e aceitar o erro de uma página quando ele acontecer —
+perseguir o ponto fixo é um laço que pode não terminar, num caminho que roda a cada tecla.
+
+### Fatia 7 — Modal de configurações e menu ⬜
+
+- [ ] Modal de configurações, aberto por `Ctrl+,` e pelo menu, sobre as páginas e **sem nada
+      editável**: duas seções, Atalhos e Formatação
+- [ ] Seção Atalhos **gerada** do `KeyBindingRegistry`, não escrita à mão, mais a tabela de
+      marcação (`# ` título, `**negrito**`, `:-:` centralizado, `\page`, `\toc`)
+- [ ] Menu superior 'Opções': Abrir, Salvar, Salvar como, Exportar PDF, Configurações — todas já
+      desenvolvidas quando esta fatia começa, que é a razão de ela ser a última
+
+**A lista de atalhos é gerada porque uma lista escrita mente na primeira mudança de binding.** O
+registry já mapeia chord → `CommandId`; falta um nome de exibição por comando. E é o mesmo
+`CommandId` que o menu despacha — o comentário do próprio tipo prevê isso desde a Fase 3, e esta é
+a hora de cobrá-lo: menu, modal e atalho pedindo `editor.save`, sem três caminhos para o mesmo
+trabalho.
+
+**A seção Formatação exibe o `TypographyPreset` de verdade**, e é por isso que ele veio na Fatia 1:
+com o preset, a tabela mostra a formatação que está desenhando a folha, e não um exemplo. É a
+precursora de "Normas configuráveis" — o que falta depois é torná-la editável, não construí-la.
+
+```json
+{
+  "general": { "fontFamily": "Times New Roman", "fontSize": 12, "lineHeight": 1.5 },
+  "title1":  { "fontFamily": "Times New Roman", "fontSize": 24, "bold": true }
+}
+```
+
+**O modal é o primeiro uso real do `FocusScopeTracker`.** Com ele aberto, as setas não podem mover
+o caret atrás dele — que é exatamente a distinção `Global`/`Editor` que o `ShortcutScope` carrega
+desde a Fase 3, quando havia um painel só e ela parecia vacuosa.
 
 ---
 
@@ -960,7 +1126,16 @@ Registrado desta fatia:
 
 Nada aqui está prometido; é estacionamento para não perder a ideia nem inflar as fases acima.
 
-- Justificação de texto Knuth-Plass (o MVP usa greedy word-wrap)
+- Justificação de texto Knuth-Plass — veio da Fase 6. A justificação da Fatia 4 já entrega o efeito
+  visual (margem direita reta) sobre a quebra gulosa; o que KP acrescenta é escolher melhor *onde*
+  quebrar, e sem hifenização o ganho em português é modesto. Volta quando uma linha justificada
+  feia aparecer na tela — que é o critério com que a Fatia 5.3 decidiu a tolerância da margem
+- Interpretador de tabelas markdown — veio da Fase 6, e é a maior feature que passou por lá.
+  Contraria a decisão que mais sustenta o motor: uma tabela são N linhas da fonte formando **uma**
+  grade, quando "uma linha da fonte é uma linha na página". E revelar a fonte de uma tabela ao
+  caret entrar nela mudaria a **altura** do bloco — invariante que o roadmap afirma duas vezes, no
+  heading e na marcação inline. Entra com fatia própria e com a decisão emendada por escrito, nunca
+  como um item no meio de outra
 - Sublinhado — Markdown não tem sintaxe para ele, e ABNT e APA usam itálico em texto corrido. A
   sintaxe se decide quando o uso aparecer
 - Escape de marcação inline (`\*`), para um asterisco literal dentro de uma frase enfatizada
@@ -972,5 +1147,7 @@ Nada aqui está prometido; é estacionamento para não perder a ideia nem inflar
   suporta N passos e tem teste; falta um comando que queira um chord, não máquina
 - Árvore balanceada na piece list (só se o profiling exigir)
 - Exportação DOCX
-- Normas configuráveis (ABNT/APA) como presets de `PageSettings`
+- Normas configuráveis (ABNT/APA): a Fatia 1 constrói o `TypographyPreset` e a Fatia 7 o exibe. O
+  que falta é torná-lo **editável**, ter mais de um preset e um `PageSettings` que venha junto com
+  cada um
 - Trimming/ReadyToRun no publish para reduzir os 95MB do executável
