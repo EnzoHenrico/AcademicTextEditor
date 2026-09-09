@@ -22,15 +22,22 @@
                 BorderBrush="#B4B4BA"
                 BorderThickness="0,1,0,0"
                 Padding="10,4">
-            <Grid ColumnDefinitions="*,Auto">
+            <Grid ColumnDefinitions="*,Auto,Auto">
                 <TextBlock x:Name="StatusText"
                            FontSize="12"
                            Foreground="#3F3F46"
                            VerticalAlignment="Center"
                            TextTrimming="CharacterEllipsis" />
 
-                <TextBlock x:Name="StatusPath"
+                <TextBlock x:Name="StatusCounts"
                            Grid.Column="1"
+                           Margin="16,0,0,0"
+                           FontSize="12"
+                           Foreground="#3F3F46"
+                           VerticalAlignment="Center" />
+
+                <TextBlock x:Name="StatusPath"
+                           Grid.Column="2"
                            Margin="16,0,0,0"
                            FontSize="12"
                            Foreground="#6B6B75"

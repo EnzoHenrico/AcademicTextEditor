@@ -30,6 +30,7 @@ public sealed class EditorViewModel
 
     private PageSettings _pageSettings;
     private TypographyPreset _typography;
+    private HeaderFooterSettings _bands;
 
     // O texto que gerou o layout publicado. É contra ele que a próxima paginação descobre o que
     // mudou — comparar dois textos é exato e dispensa rastrear edição por edição.
@@ -43,12 +44,16 @@ public sealed class EditorViewModel
     /// A norma tipográfica. <c>null</c> usa o <see cref="TypographyPreset.Default"/>, que é o do
     /// MVP — a janela passa o da ABNT.
     /// </param>
+    /// <param name="bands">
+    /// Cabeçalho e rodapé. <c>null</c> é documento sem nenhum dos dois.
+    /// </param>
     public EditorViewModel(
         ITextMeasurer measurer,
         PageSettings pageSettings,
         string initialText,
         IDocumentStorage? storage = null,
-        TypographyPreset? typography = null)
+        TypographyPreset? typography = null,
+        HeaderFooterSettings? bands = null)
     {
         ArgumentNullException.ThrowIfNull(measurer);
         ArgumentNullException.ThrowIfNull(initialText);
@@ -57,6 +62,7 @@ public sealed class EditorViewModel
         _storage = storage ?? new FileDocumentStorage();
         _pageSettings = pageSettings;
         _typography = typography ?? TypographyPreset.Default;
+        _bands = bands ?? HeaderFooterSettings.None;
         _document = new EditorDocument(initialText);
         _undo = new UndoRedoStack(_document);
 
@@ -157,6 +163,40 @@ public sealed class EditorViewModel
             SchedulePagination();
         }
     }
+
+    /// <summary>Cabeçalho e rodapé. Trocá-los remonta as faixas na próxima publicação.</summary>
+    /// <remarks>
+    /// Repagina, e não só remonta: é o caminho simples, e trocar cabeçalho não é operação de
+    /// digitação — acontece ao abrir ou salvar um arquivo com outro nome, não a cada tecla.
+    /// </remarks>
+    public HeaderFooterSettings Bands
+    {
+        get => _bands;
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+
+            if (_bands == value)
+            {
+                return;
+            }
+
+            _bands = value;
+            SchedulePagination();
+        }
+    }
+
+    /// <summary>Caracteres e palavras do documento, do último layout publicado.</summary>
+    /// <remarks>
+    /// Do layout publicado, e não do buffer: a contagem é feita na mesma passada de background que
+    /// já materializou a fonte inteira para paginar, então custa a varredura e nada mais. Fica até
+    /// um layout atrás do que se acabou de digitar — atraso invisível num contador, e o mesmo que a
+    /// tela inteira tem.
+    /// </remarks>
+    public DocumentStatistics Statistics { get; private set; }
+
+    /// <summary>Caracteres e palavras do trecho selecionado, ou <c>null</c> sem seleção.</summary>
+    public DocumentStatistics? SelectionStatistics { get; private set; }
 
     public void InsertText(string text) => Insert(text, caretAdvance: null);
 
@@ -476,7 +516,46 @@ public sealed class EditorViewModel
         _selection = selection;
         _caretColumnStale = false;
         RefreshCaretPosition();
+        SetStatistics(Statistics);
         Invalidated?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Publica as contagens, e avisa a janela só quando algum dos dois números mudou.
+    /// </summary>
+    /// <remarks>
+    /// A contagem da seleção sai do <b>texto publicado</b>, com <c>AsSpan</c>: nada é
+    /// materializado. Um <c>Ctrl+A</c> na tese inteira seria ~2MB direto no Large Object Heap se
+    /// pedisse o trecho ao buffer, e isso a cada movimento do ponteiro durante um arrasto.
+    /// </remarks>
+    private void SetStatistics(DocumentStatistics document)
+    {
+        var selection = SelectionStatisticsOf(_selection);
+
+        if (Statistics == document && SelectionStatistics == selection)
+        {
+            return;
+        }
+
+        Statistics = document;
+        SelectionStatistics = selection;
+        DocumentStateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private DocumentStatistics? SelectionStatisticsOf(Selection selection)
+    {
+        if (selection.IsEmpty)
+        {
+            return null;
+        }
+
+        // O texto publicado pode estar um layout atrás do buffer, e aí o trecho selecionado
+        // descreveria posições que ele ainda não tem. Grampeia: um número momentaneamente curto é
+        // melhor que uma exceção no caminho do ponteiro.
+        var start = Math.Clamp(selection.Range.Start, 0, _publishedSource.Length);
+        var end = Math.Clamp(selection.Range.End, start, _publishedSource.Length);
+
+        return DocumentStatistics.Of(_publishedSource.AsSpan(start, end - start));
     }
 
     // Depois de uma edição o layout na tela ainda é o de antes, então a coluna alvo calculada
@@ -506,6 +585,7 @@ public sealed class EditorViewModel
         FilePath = path;
         IsModified = false;
         _undo.Break();
+        UpdateBandTitle();
         Report($"salvo em {Path.GetFileName(path)}");
     }
 
@@ -529,10 +609,22 @@ public sealed class EditorViewModel
         IsModified = false;
         _selection = Selection.At(new Caret(0, 0.0));
         _caretColumnStale = true;
+        UpdateBandTitle();
 
         Report($"aberto {Path.GetFileName(path)}");
         SchedulePagination();
     }
+
+    /// <summary>O <c>{title}</c> do cabeçalho segue o arquivo aberto.</summary>
+    /// <remarks>
+    /// Passa pela propriedade, e não pelo campo, para herdar a comparação por valor do record:
+    /// salvar por cima do mesmo arquivo não repagina nada.
+    /// </remarks>
+    private void UpdateBandTitle() =>
+        Bands = _bands with
+        {
+            DocumentTitle = FilePath is { } path ? Path.GetFileNameWithoutExtension(path) : string.Empty,
+        };
 
     private void MarkModified()
     {
@@ -614,6 +706,7 @@ public sealed class EditorViewModel
                 var snapshot = _document.CreateSnapshot();
                 var settings = _pageSettings;
                 var typography = _typography;
+                var bands = _bands;
                 var caretOffset = Caret.Offset;
                 var published = new Published(_publishedSource, Paginated);
 
@@ -624,16 +717,27 @@ public sealed class EditorViewModel
                 {
                     var source = snapshot.GetText();
 
-                    return (Source: source, Document: LayoutEngine.Layout(
+                    var paginated = LayoutEngine.Layout(
                         MarkupParser.Parse(source, typography),
                         settings,
                         _measurer,
                         caretOffset,
                         LayoutReuse.Between(published.Source, source, published.Document),
-                        typography));
+                        typography);
+
+                    // As faixas são um passe sobre o resultado: só assim o {pages} sabe quantas
+                    // folhas existem, e é por isso que elas não influenciam a paginação.
+                    return (
+                        Source: source,
+                        Document: PageBands.Apply(paginated, bands, _measurer),
+
+                        // Contar aqui é de graça: a fonte inteira já está materializada para o
+                        // parser, e a varredura é uma passada sem alocar. Na UI thread, a cada
+                        // tecla, seria um megabyte percorrido no caminho do teclado.
+                        Statistics: DocumentStatistics.Of(source));
                 }).ConfigureAwait(true);
 
-                Publish(laidOut.Document, laidOut.Source);
+                Publish(laidOut.Document, laidOut.Source, laidOut.Statistics);
             }
         }
         catch (Exception exception)
@@ -648,10 +752,11 @@ public sealed class EditorViewModel
         }
     }
 
-    private void Publish(PaginatedDocument paginated, string source)
+    private void Publish(PaginatedDocument paginated, string source, DocumentStatistics statistics)
     {
         Paginated = paginated;
         _publishedSource = source;
+        SetStatistics(statistics);
 
         if (_caretColumnStale)
         {
