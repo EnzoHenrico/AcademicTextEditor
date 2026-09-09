@@ -817,17 +817,47 @@ Registrado desta fatia:
   referencia o App. O que dá para testar do lado do Core — o round-trip `AtPoint`/`Locate` — está
   testado; o que sobra é a conversão DIP↔pt, verificada à mão
 
-### Fatia 2 — Seleção: mouse e teclado ⬜
+### Fatia 2 — Seleção: mouse e teclado ✅
 
-- [ ] `Selection(Anchor, Caret)` no Core. Âncora é offset nu; a ponta ativa é um `Caret` inteiro,
-      porque ela **é** o caret — com afinidade e coluna alvo
-- [ ] `SelectionGeometry.RectsFor` — um retângulo por linha visual que o trecho cruza
-- [ ] `WordBoundaries.WordAt` para o duplo clique; o triplo é a linha **visual**, a mesma
+- [x] `Selection(Anchor, Caret)` no Core. Âncora é offset nu; a ponta ativa é um `Caret` inteiro,
+      porque ela **é** o caret — com afinidade e coluna alvo, que é do que a seta seguinte precisa
+- [x] **O ViewModel guarda a seleção, não o caret.** `Caret` virou `_selection.Active`: um caret e
+      uma seleção em campos separados seriam dois estados para a mesma coisa, e o dia em que
+      divergissem o texto apagado não seria o texto destacado
+- [x] `SelectionGeometry.RectsFor` — um retângulo por linha visual que o trecho cruza
+- [x] `WordBoundaries.WordAt` para o duplo clique; o triplo é a linha **visual**, a mesma
       definição que Home e End já usam
-- [ ] Os oito `MoveCaret*` do ViewModel ganham `extend`. **O `CaretNavigator` não muda uma
-      linha:** quem mantém ou recolhe a âncora é o ViewModel
-- [ ] Arrastar (`ClickCount` 1/2/3), `Shift+setas`, `Shift+Home/End`, `Shift+PageUp/PageDown`
-- [ ] Retângulos desenhados atrás do texto, só nas folhas que o culling já selecionou
+- [x] Os oito `MoveCaret*` do ViewModel ganham `extend`. **O `CaretNavigator` não mudou uma
+      linha:** Shift não é um movimento diferente, é o mesmo sem recolher a âncora — e quem
+      mantém ou recolhe é o ViewModel
+- [x] Arrastar com captura de ponteiro (`ClickCount` 1/2/3), `Shift+clique`, `Shift+setas`,
+      `Shift+Home/End`, `Shift+PageUp/PageDown`
+- [x] Retângulos desenhados **atrás** do texto, só nas folhas que o culling já selecionou, e
+      percorridos com um índice que avança junto com as folhas em vez de uma varredura por folha
+
+Registrado desta fatia:
+
+- **As duas pontas resolvem a fronteira compartilhada para dentro do trecho** — começo
+  `Downstream`, fim `Upstream`. Não é heurística: numa quebra por largura o fim de uma linha e o
+  começo da seguinte são o mesmo offset, e resolver ao contrário penduraria um retângulo de
+  largura zero numa das pontas. É também o que dispensa a âncora de ter afinidade própria
+- **A lasca da linha em branco vale pela quebra, não pela linha.** Uma linha sem tinta dentro do
+  trecho ganha a largura de um espaço, senão pareceria um buraco no meio da seleção — mas só
+  quando o `\n` dela está dentro do trecho. Um trecho que apenas termina no começo dela não pegou
+  nada, e uma lasca ali prometeria um caractere que não existe
+- **Palavra não atravessa run.** `WordAt` expande dentro de um run, então a fronteira de estilo —
+  o começo de um `**negrito**` — vale como fronteira de palavra. Em texto comum a linha inteira é
+  um run, que é o caso que importa
+- **Meio caractere de imprecisão no duplo clique, e simétrica.** O offset chega arredondado para a
+  fronteira mais próxima, então a metade direita da última letra de uma palavra já cai no branco
+  seguinte. A regra alternativa — olhar para trás quando o caractere à direita não é de palavra —
+  tem a sua própria metade errada: clicar na metade esquerda de uma vírgula pegaria a palavra
+  antes dela. Ficou a regra simples, de um caso só
+- **`Ctrl+A` na tese inteira custa 3,65ms** para 10.667 retângulos — 0,34 µs por linha, medido no
+  `SelectionPerformanceTests` com teto de 500ms contra regressão. É barato porque as linhas
+  inteiramente dentro do trecho **não medem nada**: a esquerda é a origem da linha e a direita é a
+  tinta que o line breaker já posicionou. Só as duas linhas de fronteira medem um prefixo. O corte
+  de pedir os retângulos por folha visível não foi preciso, e fica anotado se um dia for
 
 ### Fatia 3 — Recortar, copiar, colar e apagar a seleção ⬜
 

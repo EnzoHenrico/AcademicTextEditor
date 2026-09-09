@@ -34,7 +34,7 @@ public sealed class EditorViewModel
     // mudou — comparar dois textos é exato e dispensa rastrear edição por edição.
     private string _publishedSource = string.Empty;
 
-    private Caret _caret;
+    private Selection _selection;
     private bool _caretColumnStale = true;
     private DocumentEncoding _encoding = DocumentEncoding.Utf8;
 
@@ -55,7 +55,7 @@ public sealed class EditorViewModel
 
         // No começo do documento, não no fim: é onde todo editor põe o caret ao abrir um
         // arquivo — e, com a rolagem automática, deixá-lo no fim abriria o app na última folha.
-        _caret = new Caret(0, 0.0);
+        _selection = Selection.At(new Caret(0, 0.0));
         Paginated = PaginatedDocument.Empty(pageSettings);
 
         SchedulePagination();
@@ -78,7 +78,21 @@ public sealed class EditorViewModel
     public PaginatedDocument Paginated { get; private set; }
 
     /// <summary>Onde o texto digitado entra, e para onde ↑/↓ miram.</summary>
-    public Caret Caret => _caret;
+    /// <remarks>
+    /// É a ponta ativa da seleção, e não um campo à parte: um caret e uma seleção que se
+    /// contradizem seriam dois estados para a mesma coisa, e o dia em que divergissem o texto
+    /// apagado não seria o texto destacado.
+    /// </remarks>
+    public Caret Caret => _selection.Active;
+
+    /// <summary>O trecho selecionado. Recolhida no caret quando não há nada selecionado.</summary>
+    public Selection Selection => _selection;
+
+    /// <summary>
+    /// Onde pintar o destaque, recalculado quando a seleção ou o layout muda — nunca no
+    /// <c>Render</c>, pelo mesmo motivo do <see cref="CaretPosition"/>.
+    /// </summary>
+    public IReadOnlyList<SelectionRect> SelectionRects { get; private set; } = [];
 
     /// <summary>
     /// Geometria do caret na folha, recalculada quando o caret ou o layout muda — nunca no
@@ -125,7 +139,7 @@ public sealed class EditorViewModel
     /// </remarks>
     public void InsertLineBreak()
     {
-        var lineBreak = LineBreaks.ForEnter(_caret, Paginated);
+        var lineBreak = LineBreaks.ForEnter(Caret, Paginated);
 
         Insert(lineBreak.Text, lineBreak.CaretDelta);
     }
@@ -144,7 +158,7 @@ public sealed class EditorViewModel
 
         // O comprimento vem do documento, não da string: a normalização de fim de linha pode
         // encurtar o texto, e mover o caret por text.Length o deixaria adiante do buffer.
-        var before = _caret.Offset;
+        var before = Caret.Offset;
         var edit = _document.Insert(before, text);
 
         if (edit.IsEmpty)
@@ -163,21 +177,21 @@ public sealed class EditorViewModel
         // A afinidade sobrevive à digitação: quem está escrevendo no fim de uma linha quebrada
         // pela margem continua escrevendo lá, e não salta para o começo da linha de baixo a cada
         // tecla que recoloca o caret exatamente sobre a fronteira.
-        MoveCaretAfterEdit(after, _caret.Affinity);
+        MoveCaretAfterEdit(after, Caret.Affinity);
         MarkModified();
         SchedulePagination();
     }
 
     public void DeleteBackward()
     {
-        if (_caret.Offset == 0)
+        if (Caret.Offset == 0)
         {
             return;
         }
 
         // Um marcador de bloco sai inteiro ou não sai: apagar o '\n' que isola um \page o grudaria
         // no texto de cima, e ele deixaria de ser quebra de página para virar texto na folha.
-        if (BlockMarkers.BackspaceRange(_caret.Offset, Paginated) is { } marker)
+        if (BlockMarkers.BackspaceRange(Caret.Offset, Paginated) is { } marker)
         {
             RemoveRange(marker);
             return;
@@ -185,8 +199,8 @@ public sealed class EditorViewModel
 
         // Um par substituto é um caractere só para quem escreveu, e dois para o buffer. Apagar
         // metade dele deixaria um code unit órfão, que vira losango na tela e lixo no arquivo.
-        var length = IsSurrogatePairEndingAt(_caret.Offset) ? 2 : 1;
-        var before = _caret.Offset;
+        var length = IsSurrogatePairEndingAt(Caret.Offset) ? 2 : 1;
+        var before = Caret.Offset;
         var edit = _document.Delete(before - length, length);
 
         _undo.Record(edit, EditKind.Deleting, before, before - length);
@@ -203,25 +217,25 @@ public sealed class EditorViewModel
 
     public void DeleteForward()
     {
-        if (_caret.Offset >= _document.Length)
+        if (Caret.Offset >= _document.Length)
         {
             return;
         }
 
-        if (BlockMarkers.DeleteRange(_caret.Offset, Paginated) is { } marker)
+        if (BlockMarkers.DeleteRange(Caret.Offset, Paginated) is { } marker)
         {
             RemoveRange(marker);
             return;
         }
 
-        var length = IsSurrogatePairStartingAt(_caret.Offset) ? 2 : 1;
-        var before = _caret.Offset;
+        var length = IsSurrogatePairStartingAt(Caret.Offset) ? 2 : 1;
+        var before = Caret.Offset;
         var edit = _document.Delete(before, length);
 
         // O caret não sai do lugar: preservar a afinidade é o que o mantém desenhado do mesmo
         // lado da fronteira de onde o autor apagou.
         _undo.Record(edit, EditKind.Deleting, before, before);
-        MoveCaretAfterEdit(before, _caret.Affinity);
+        MoveCaretAfterEdit(before, Caret.Affinity);
         MarkModified();
         SchedulePagination();
     }
@@ -236,7 +250,7 @@ public sealed class EditorViewModel
             return;
         }
 
-        var before = _caret.Offset;
+        var before = Caret.Offset;
         var edit = _document.Delete(range.Start, length);
 
         // EditKind.Other: apagar um marcador não se junta a uma rajada de Backspace. Desfazer tem
@@ -247,25 +261,68 @@ public sealed class EditorViewModel
         SchedulePagination();
     }
 
-    public void MoveCaretLeft() => Navigate(CaretNavigator.MoveLeft(_caret, Paginated, _measurer));
+    /// <param name="extend">
+    /// Segurando Shift: a âncora fica onde está e o trecho cresce. Sem ele, a seleção se recolhe
+    /// no caret novo — que é o que faz uma seta desmarcar, em qualquer editor.
+    /// </param>
+    public void MoveCaretLeft(bool extend = false) =>
+        Navigate(CaretNavigator.MoveLeft(Caret, Paginated, _measurer), extend);
 
-    public void MoveCaretRight() => Navigate(CaretNavigator.MoveRight(_caret, Paginated, _measurer));
+    public void MoveCaretRight(bool extend = false) =>
+        Navigate(CaretNavigator.MoveRight(Caret, Paginated, _measurer), extend);
 
-    public void MoveCaretUp() => Navigate(CaretNavigator.MoveUp(_caret, Paginated, _measurer));
+    public void MoveCaretUp(bool extend = false) =>
+        Navigate(CaretNavigator.MoveUp(Caret, Paginated, _measurer), extend);
 
-    public void MoveCaretDown() => Navigate(CaretNavigator.MoveDown(_caret, Paginated, _measurer));
+    public void MoveCaretDown(bool extend = false) =>
+        Navigate(CaretNavigator.MoveDown(Caret, Paginated, _measurer), extend);
 
-    public void MoveCaretToLineStart() => Navigate(CaretNavigator.MoveToLineStart(_caret, Paginated, _measurer));
+    public void MoveCaretToLineStart(bool extend = false) =>
+        Navigate(CaretNavigator.MoveToLineStart(Caret, Paginated, _measurer), extend);
 
-    public void MoveCaretToLineEnd() => Navigate(CaretNavigator.MoveToLineEnd(_caret, Paginated, _measurer));
+    public void MoveCaretToLineEnd(bool extend = false) =>
+        Navigate(CaretNavigator.MoveToLineEnd(Caret, Paginated, _measurer), extend);
 
-    public void MoveCaretPageUp() => Navigate(CaretNavigator.MovePageUp(_caret, Paginated, _measurer));
+    public void MoveCaretPageUp(bool extend = false) =>
+        Navigate(CaretNavigator.MovePageUp(Caret, Paginated, _measurer), extend);
 
-    public void MoveCaretPageDown() => Navigate(CaretNavigator.MovePageDown(_caret, Paginated, _measurer));
+    public void MoveCaretPageDown(bool extend = false) =>
+        Navigate(CaretNavigator.MovePageDown(Caret, Paginated, _measurer), extend);
 
     /// <summary>Põe o caret onde o autor clicou, em coordenadas da área de conteúdo da folha.</summary>
-    public void PlaceCaretAt(int pageIndex, double xPt, double yPt) =>
-        Navigate(CaretNavigator.AtPoint(pageIndex, xPt, yPt, Paginated, _measurer));
+    public void PlaceCaretAt(int pageIndex, double xPt, double yPt, bool extend = false) =>
+        Navigate(CaretNavigator.AtPoint(pageIndex, xPt, yPt, Paginated, _measurer), extend);
+
+    /// <summary>Duplo clique: a palavra sob o ponto.</summary>
+    public void SelectWordAt(int pageIndex, double xPt, double yPt) =>
+        SelectRange(WordBoundaries.WordAt(
+            CaretNavigator.AtPoint(pageIndex, xPt, yPt, Paginated, _measurer).Offset,
+            Paginated));
+
+    /// <summary>Triplo clique: a linha <b>visual</b>, a mesma que Home e End delimitam.</summary>
+    public void SelectLineAt(int pageIndex, double xPt, double yPt)
+    {
+        var caret = CaretNavigator.AtPoint(pageIndex, xPt, yPt, Paginated, _measurer);
+        var start = CaretNavigator.MoveToLineStart(caret, Paginated, _measurer).Offset;
+        var end = CaretNavigator.MoveToLineEnd(caret, Paginated, _measurer).Offset;
+
+        SelectRange(new TextRange(start, end - start));
+    }
+
+    public void SelectAll() => SelectRange(new TextRange(0, _document.Length));
+
+    /// <summary>Seleciona um trecho e põe o caret no fim dele.</summary>
+    /// <remarks>
+    /// <c>Upstream</c>: numa quebra por largura o fim do trecho é também o começo da linha de
+    /// baixo, e o caret pertence ao fim do que ficou selecionado.
+    /// </remarks>
+    private void SelectRange(TextRange range)
+    {
+        _undo.Break();
+        SetSelection(new Selection(
+            range.Start,
+            CaretNavigator.At(range.End, Paginated, _measurer, CaretAffinity.Upstream)));
+    }
 
     public bool CanUndo => _undo.CanUndo;
 
@@ -294,27 +351,29 @@ public sealed class EditorViewModel
     /// deixaria o agrupamento dependente do layout estar fresco — logo após uma tecla ele ainda
     /// está no debounce, e a seta não acha para onde ir.
     /// </remarks>
-    private void Navigate(Caret caret)
+    private void Navigate(Caret caret, bool extend)
     {
         _undo.Break();
-        SetCaret(caret);
+        SetSelection(extend ? _selection.ExtendTo(caret) : Selection.At(caret));
 
         // Sair do bloco revelado muda o que se vê: a marcação dele se esconde e a do bloco novo
         // aparece. Enquanto o caret fica dentro do mesmo bloco, a seta não custa layout nenhum.
-        if (!Paginated.RevealedBlock.Contains(_caret.Offset))
+        if (!Paginated.RevealedBlock.Contains(Caret.Offset))
         {
             SchedulePagination();
         }
     }
 
-    private void SetCaret(Caret caret)
+    // Compara a seleção inteira, e não só o caret: uma seta na borda do documento não move o
+    // caret mas tem de desmanchar o trecho selecionado, e comparar só o caret o deixaria destacado.
+    private void SetSelection(Selection selection)
     {
-        if (caret == _caret)
+        if (selection == _selection)
         {
             return;
         }
 
-        _caret = caret;
+        _selection = selection;
         _caretColumnStale = false;
         RefreshCaretPosition();
         Invalidated?.Invoke(this, EventArgs.Empty);
@@ -325,7 +384,8 @@ public sealed class EditorViewModel
     // novo chegar; até lá a barra fica na posição antiga, por um quadro.
     private void MoveCaretAfterEdit(int offset, CaretAffinity affinity)
     {
-        _caret = new Caret(offset, 0.0, affinity);
+        // Recolhe a seleção: o que estava destacado ou saiu do texto, ou deixou de ser o assunto.
+        _selection = Selection.At(new Caret(offset, 0.0, affinity));
         _caretColumnStale = true;
     }
 
@@ -367,7 +427,7 @@ public sealed class EditorViewModel
 
         FilePath = path;
         IsModified = false;
-        _caret = new Caret(0, 0.0);
+        _selection = Selection.At(new Caret(0, 0.0));
         _caretColumnStale = true;
 
         Report($"aberto {Path.GetFileName(path)}");
@@ -391,8 +451,11 @@ public sealed class EditorViewModel
         DocumentStateChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    private void RefreshCaretPosition() =>
-        CaretPosition = CaretGeometry.Locate(_caret.Offset, Paginated, _measurer, _caret.Affinity);
+    private void RefreshCaretPosition()
+    {
+        CaretPosition = CaretGeometry.Locate(Caret.Offset, Paginated, _measurer, Caret.Affinity);
+        SelectionRects = SelectionGeometry.RectsFor(_selection, Paginated, _measurer);
+    }
 
     private bool IsSurrogatePairEndingAt(int offset) =>
         offset >= 2
@@ -450,7 +513,7 @@ public sealed class EditorViewModel
                 // que são trocados na mesma linha do Publish e nunca chegam lá descasados.
                 var snapshot = _document.CreateSnapshot();
                 var settings = _pageSettings;
-                var caretOffset = _caret.Offset;
+                var caretOffset = Caret.Offset;
                 var published = new Published(_publishedSource, Paginated);
 
                 // ConfigureAwait(true): a continuação volta para a UI thread, então Publish e a
@@ -493,7 +556,13 @@ public sealed class EditorViewModel
             // Com a afinidade que a edição escolheu, não com a padrão: é ela que decide de que
             // lado de uma quebra por largura o caret é desenhado, e o layout novo é a primeira
             // oportunidade de resolvê-la contra as linhas de verdade.
-            _caret = CaretNavigator.At(_caret.Offset, paginated, _measurer, _caret.Affinity);
+            // 'with': a âncora sobrevive à repaginação. Quem estava com um trecho selecionado e
+            // viu um layout novo chegar continua com ele selecionado.
+            _selection = _selection with
+            {
+                Active = CaretNavigator.At(Caret.Offset, paginated, _measurer, Caret.Affinity),
+            };
+
             _caretColumnStale = false;
         }
 

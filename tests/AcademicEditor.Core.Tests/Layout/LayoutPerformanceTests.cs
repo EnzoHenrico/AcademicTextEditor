@@ -1,6 +1,4 @@
 using System.Diagnostics;
-using System.Text;
-
 using AcademicEditor.Core.Layout;
 using AcademicEditor.Core.Parsing;
 
@@ -25,22 +23,12 @@ namespace AcademicEditor.Core.Tests.Layout;
 /// </remarks>
 public sealed class LayoutPerformanceTests(ITestOutputHelper output)
 {
-    // Palavras de comprimentos variados: com palavra de tamanho fixo a quebra cai sempre no mesmo
-    // lugar e o line breaker nunca exercita o caminho da palavra que não coube.
-    private static readonly string[] Words =
-    [
-        "paginação", "documento", "acadêmico", "layout", "de", "texto", "em", "tempo", "real",
-        "com", "quebra", "por", "largura", "da", "página", "e", "medição", "tipográfica",
-    ];
-
-    private const int Paragraphs = 640;
-    private const int WordsPerParagraph = 100;
     private const int CeilingMilliseconds = 3000;
 
     [Fact]
     public void Documento_de_tese_pagina_dentro_do_teto()
     {
-        var source = BuildDocument(Paragraphs, WordsPerParagraph);
+        var source = LongDocument.Build();
         var measurer = new FakeTextMeasurer();
 
         // Uma passada fora do relógio: a primeira paga JIT e o aquecimento do heap, e é ruído
@@ -66,28 +54,5 @@ public sealed class LayoutPerformanceTests(ITestOutputHelper output)
         Assert.True(
             elapsed < CeilingMilliseconds,
             $"paginar {pages} páginas levou {elapsed:N0}ms, além do teto de {CeilingMilliseconds}ms");
-    }
-
-    /// <summary>
-    /// Parágrafos separados por linha em branco — a forma que o autor escreve e a que o parser vê:
-    /// uma linha de fonte por parágrafo, quebrada pela largura da página.
-    /// </summary>
-    private static string BuildDocument(int paragraphs, int wordsPerParagraph)
-    {
-        var builder = new StringBuilder();
-        var word = 0;
-
-        for (var paragraph = 0; paragraph < paragraphs; paragraph++)
-        {
-            for (var index = 0; index < wordsPerParagraph; index++)
-            {
-                builder.Append(Words[word++ % Words.Length]);
-                builder.Append(index == wordsPerParagraph - 1 ? '\n' : ' ');
-            }
-
-            builder.Append('\n');
-        }
-
-        return builder.ToString();
     }
 }

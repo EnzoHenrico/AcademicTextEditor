@@ -35,6 +35,7 @@ public sealed class PageSurface : Control
     private EditorViewModel? _viewModel;
     private ScrollViewer? _scroller;
     private bool _caretVisible = true;
+    private bool _dragging;
     private CaretPosition? _scrolledTo;
 
     public PageSurface()
@@ -84,7 +85,13 @@ public sealed class PageSurface : Control
         // iria para outro lugar.
         var caret = IsFocused && _caretVisible ? _viewModel.CaretPosition : (CaretPosition?)null;
 
-        PageRenderer.Render(context, _viewModel.Paginated, Bounds.Width, caret, Viewport);
+        PageRenderer.Render(
+            context,
+            _viewModel.Paginated,
+            Bounds.Width,
+            caret,
+            Viewport,
+            _viewModel.SelectionRects);
     }
 
     /// <summary>
@@ -130,6 +137,8 @@ public sealed class PageSurface : Control
             return;
         }
 
+        var extend = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+
         switch (e.Key)
         {
             case Key.Back:
@@ -149,43 +158,46 @@ public sealed class PageSurface : Control
 
             // Navegação: o controle só traduz a tecla numa chamada ao Core. Decidir para onde o
             // caret vai depende do documento paginado, que é do Core — e é lá que isso é testado.
+            //
+            // Shift não é um movimento diferente: é o mesmo movimento sem recolher a âncora. Por
+            // isso ele entra como parâmetro, e não como oito casos a mais neste switch.
             case Key.Left:
-                _viewModel.MoveCaretLeft();
+                _viewModel.MoveCaretLeft(extend);
                 e.Handled = true;
                 break;
 
             case Key.Right:
-                _viewModel.MoveCaretRight();
+                _viewModel.MoveCaretRight(extend);
                 e.Handled = true;
                 break;
 
             case Key.Up:
-                _viewModel.MoveCaretUp();
+                _viewModel.MoveCaretUp(extend);
                 e.Handled = true;
                 break;
 
             case Key.Down:
-                _viewModel.MoveCaretDown();
+                _viewModel.MoveCaretDown(extend);
                 e.Handled = true;
                 break;
 
             case Key.Home:
-                _viewModel.MoveCaretToLineStart();
+                _viewModel.MoveCaretToLineStart(extend);
                 e.Handled = true;
                 break;
 
             case Key.End:
-                _viewModel.MoveCaretToLineEnd();
+                _viewModel.MoveCaretToLineEnd(extend);
                 e.Handled = true;
                 break;
 
             case Key.PageUp:
-                _viewModel.MoveCaretPageUp();
+                _viewModel.MoveCaretPageUp(extend);
                 e.Handled = true;
                 break;
 
             case Key.PageDown:
-                _viewModel.MoveCaretPageDown();
+                _viewModel.MoveCaretPageDown(extend);
                 e.Handled = true;
                 break;
 
@@ -211,10 +223,44 @@ public sealed class PageSurface : Control
         // barra de rolagem punha o caret sem que a tecla seguinte chegasse aqui.
         Focus();
 
-        if (PageRenderer.HitTest(_viewModel.Paginated, e.GetPosition(this), Bounds.Width) is { } hit)
+        if (PageRenderer.HitTest(_viewModel.Paginated, e.GetPosition(this), Bounds.Width) is not { } hit)
         {
-            _viewModel.PlaceCaretAt(hit.PageIndex, hit.XPt, hit.YPt);
-            e.Handled = true;
+            return;
+        }
+
+        // Um clique põe o caret, dois pegam a palavra, três a linha visual. Shift no clique
+        // estende a seleção a partir da âncora, como em qualquer editor.
+        switch (e.ClickCount)
+        {
+            case 1:
+                _viewModel.PlaceCaretAt(
+                    hit.PageIndex, hit.XPt, hit.YPt, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
+                break;
+
+            case 2:
+                _viewModel.SelectWordAt(hit.PageIndex, hit.XPt, hit.YPt);
+                break;
+
+            default:
+                _viewModel.SelectLineAt(hit.PageIndex, hit.XPt, hit.YPt);
+                break;
+        }
+
+        // Captura para que o arrasto continue chegando aqui mesmo quando o ponteiro sai da
+        // superfície — soltar o botão fora da janela tem de terminar a seleção, não abandoná-la.
+        _dragging = true;
+        e.Pointer.Capture(this);
+        e.Handled = true;
+    }
+
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        base.OnPointerReleased(e);
+
+        if (_dragging)
+        {
+            _dragging = false;
+            e.Pointer.Capture(null);
         }
     }
 
@@ -224,7 +270,18 @@ public sealed class PageSurface : Control
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        Cursor = IsOverContent(e.GetPosition(this)) ? TextCursor : ArrowCursor;
+
+        var position = e.GetPosition(this);
+
+        Cursor = IsOverContent(position) ? TextCursor : ArrowCursor;
+
+        // Arrastando: o ponto vira a ponta ativa da seleção, e a âncora fica onde o botão desceu.
+        if (_dragging
+            && _viewModel is not null
+            && PageRenderer.HitTest(_viewModel.Paginated, position, Bounds.Width) is { } hit)
+        {
+            _viewModel.PlaceCaretAt(hit.PageIndex, hit.XPt, hit.YPt, extend: true);
+        }
     }
 
     /// <summary>O ponto está dentro da área de conteúdo de alguma folha?</summary>
@@ -272,6 +329,7 @@ public sealed class PageSurface : Control
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         _blinkTimer.Stop();
+        _dragging = false;
 
         if (_scroller is not null)
         {

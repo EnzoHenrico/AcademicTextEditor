@@ -28,6 +28,10 @@ public static class PageRenderer
     private const double CaretWidthDip = 1.0;
 
     private static readonly IBrush PageBrush = Brushes.White;
+
+    // Opaco, e desenhado ATRÁS do texto: um destaque translúcido por cima mudaria a cor de cada
+    // glifo, e o que o autor quer ver é o texto, marcado.
+    private static readonly IBrush SelectionBrush = new SolidColorBrush(Color.FromRgb(0xB4, 0xD5, 0xFE));
     private static readonly IBrush CaretBrush = Brushes.Black;
     private static readonly IBrush TextBrush = Brushes.Black;
     private static readonly IPen PageBorderPen = new Pen(new SolidColorBrush(Color.FromRgb(0xC8, 0xC8, 0xC8)), 1.0);
@@ -128,6 +132,11 @@ public static class PageRenderer
             ((dip.Y - origin.Y) / PtToDip) - settings.ContentTopPt);
     }
 
+    /// <param name="selection">
+    /// Onde pintar o destaque, já calculado pelo <c>SelectionGeometry</c> — <c>Render</c> não
+    /// recalcula nada. <b>Assume ordenado por página</b>, que é como o Core o produz: é o que
+    /// permite percorrer a lista uma vez só enquanto as folhas visíveis passam.
+    /// </param>
     /// <param name="viewport">
     /// Retângulo visível, nas coordenadas da superfície. Só as folhas que ele cruza são
     /// desenhadas. <c>null</c> desenha a pilha inteira — é o que uma medição ou um exportador
@@ -138,17 +147,37 @@ public static class PageRenderer
         PaginatedDocument document,
         double surfaceWidthDip,
         CaretPosition? caret = null,
-        Rect? viewport = null)
+        Rect? viewport = null,
+        IReadOnlyList<SelectionRect>? selection = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(document);
 
         var settings = document.Settings;
         var (first, last) = VisiblePages(document, viewport);
+        var rects = selection ?? [];
+
+        // Índice que avança junto com as folhas, em vez de varrer a lista uma vez por folha: um
+        // Ctrl+A num documento de 300 páginas produz dezesseis mil retângulos, e o culling existe
+        // justamente para nenhum quadro pagar por todos eles.
+        var cursor = 0;
+
+        while (cursor < rects.Count && rects[cursor].PageIndex < first)
+        {
+            cursor++;
+        }
 
         for (var index = first; index <= last; index++)
         {
-            RenderPage(context, document.Pages[index], settings, PageOrigin(settings, index, surfaceWidthDip));
+            var origin = PageOrigin(settings, index, surfaceWidthDip);
+            var start = cursor;
+
+            while (cursor < rects.Count && rects[cursor].PageIndex == index)
+            {
+                cursor++;
+            }
+
+            RenderPage(context, document.Pages[index], settings, origin, rects, start, cursor);
         }
 
         if (caret is { } position && CaretRectDip(document, position, surfaceWidthDip) is { } rect)
@@ -190,13 +219,35 @@ public static class PageRenderer
             PageGapDip + (pageIndex * (pageHeightDip + PageGapDip)));
     }
 
-    private static void RenderPage(DrawingContext context, PageLayout page, PageSettings settings, Point origin)
+    private static void RenderPage(
+        DrawingContext context,
+        PageLayout page,
+        PageSettings settings,
+        Point origin,
+        IReadOnlyList<SelectionRect> selection,
+        int selectionStart,
+        int selectionEnd)
     {
         var bounds = new Rect(origin, new Size(settings.WidthPt * PtToDip, settings.HeightPt * PtToDip));
         context.DrawRectangle(PageBrush, PageBorderPen, bounds);
 
         var contentLeftDip = origin.X + (settings.ContentLeftPt * PtToDip);
         var contentTopDip = origin.Y + (settings.ContentTopPt * PtToDip);
+
+        // Depois do papel e antes do texto: é a ordem que faz o destaque marcar o texto em vez de
+        // apagá-lo.
+        for (var index = selectionStart; index < selectionEnd; index++)
+        {
+            var rect = selection[index];
+
+            context.FillRectangle(
+                SelectionBrush,
+                new Rect(
+                    contentLeftDip + (rect.XPt * PtToDip),
+                    contentTopDip + (rect.YPt * PtToDip),
+                    rect.WidthPt * PtToDip,
+                    rect.HeightPt * PtToDip));
+        }
 
         foreach (var line in page.Lines)
         {
