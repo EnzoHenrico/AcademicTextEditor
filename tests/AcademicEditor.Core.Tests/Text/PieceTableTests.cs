@@ -187,5 +187,35 @@ public sealed class PieceTableTests
         Assert.Equal(new string('a', 100), snapshot.GetText());
     }
 
+    // Copiar uma linha não pode custar o documento inteiro: o trecho sai atravessando só as peças
+    // que ele cruza.
+    [Theory]
+    [InlineData(0, 0, "")]
+    [InlineData(0, 3, "abc")]
+    [InlineData(3, 3, "def")]
+    [InlineData(2, 2, "cd")]
+    [InlineData(0, 9, "abcdefghi")]
+    [InlineData(9, 0, "")]
+    public void Snapshot_materializa_um_trecho(int start, int length, string expected)
+    {
+        // Três peças: o original, uma inserção no meio e uma no fim.
+        var table = new PieceTable("adi");
+        table.Insert(1, "bc");
+        table.Insert(4, "efgh");
+
+        Assert.Equal("abcdefghi", Text(table));
+        Assert.Equal(expected, table.CreateSnapshot().GetText(start, length));
+    }
+
+    [Fact]
+    public void Trecho_fora_do_documento_e_erro_de_quem_chamou()
+    {
+        var snapshot = new PieceTable("abc").CreateSnapshot();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => snapshot.GetText(-1, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => snapshot.GetText(0, -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => snapshot.GetText(2, 2));
+    }
+
     private static string Text(PieceTable table) => table.CreateSnapshot().GetText();
 }

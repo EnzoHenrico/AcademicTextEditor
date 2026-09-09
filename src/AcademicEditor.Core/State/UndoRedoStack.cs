@@ -78,6 +78,46 @@ public sealed class UndoRedoStack
         _done.Add(_open);
     }
 
+    /// <summary>Registra várias edições como <b>um</b> grupo, e fecha.</summary>
+    /// <remarks>
+    /// <para>
+    /// É o que faz substituir a seleção ser um só undo. O <see cref="Record"/> agrupa apenas
+    /// edições do mesmo <see cref="EditKind"/> que continuam de onde a anterior parou, e apagar
+    /// mais inserir são duas <see cref="EditKind.Other"/> — pelo caminho normal virariam dois
+    /// grupos, e um Ctrl+Z devolveria o texto digitado sem devolver o que foi apagado.
+    /// </para>
+    /// <para>
+    /// A ordem importa e já está certa: <see cref="Undo"/> reverte de trás para a frente, que é
+    /// exatamente a ordem de desfazer apagar-e-inserir.
+    /// </para>
+    /// </remarks>
+    public void RecordCompound(IReadOnlyList<PieceEdit> edits, int caretBefore, int caretAfter)
+    {
+        ArgumentNullException.ThrowIfNull(edits);
+
+        var group = new Group(EditKind.Other, caretBefore, caretAfter);
+
+        foreach (var edit in edits)
+        {
+            if (!edit.IsEmpty)
+            {
+                group.Edits.Add(edit);
+            }
+        }
+
+        if (group.Edits.Count == 0)
+        {
+            return;
+        }
+
+        // Mesma regra do Record: editar depois de desfazer abandona o que havia sido desfeito.
+        _undone.Clear();
+        _done.Add(group);
+
+        // Fecha: nada se junta a uma substituição, nem ela a nada.
+        Break();
+    }
+
     /// <summary>Fecha o grupo corrente. Chame ao mover o caret, ao salvar, ao trocar de contexto.</summary>
     public void Break() => _open = null;
 

@@ -859,15 +859,43 @@ Registrado desta fatia:
   tinta que o line breaker já posicionou. Só as duas linhas de fronteira medem um prefixo. O corte
   de pedir os retângulos por folha visível não foi preciso, e fica anotado se um dia for
 
-### Fatia 3 — Recortar, copiar, colar e apagar a seleção ⬜
+### Fatia 3 — Recortar, copiar, colar e apagar a seleção ✅
 
-- [ ] `TextBufferSnapshot.GetText(start, length)` — copiar uma linha não pode materializar o
-      documento inteiro
-- [ ] `UndoRedoStack.RecordCompound` — substituir a seleção é **um** undo
-- [ ] Digitar, Enter, Del e Backspace com seleção apagam o trecho primeiro
-- [ ] `Ctrl+C`, `Ctrl+X`, `Ctrl+V`, `Ctrl+A` no `KeyBindingRegistry`, escopo `Editor`
-- [ ] Clipboard na `MainWindow`, como o `IStorageProvider` dos diálogos — o `EditorViewModel`
+- [x] `TextBufferSnapshot.GetText(start, length)` — copiar uma linha não pode materializar o
+      documento inteiro, que nas 301 páginas são ~2MB direto no **Large Object Heap**. Atravessa
+      só as peças que o trecho cruza
+- [x] `UndoRedoStack.RecordCompound` — substituir a seleção é **um** undo. `Record` agrupa apenas
+      edições do mesmo `EditKind` que continuam de onde a anterior parou, e apagar mais inserir
+      são duas `Other`: pelo caminho normal virariam dois grupos, e um Ctrl+Z devolveria o texto
+      digitado sem devolver o que foi apagado
+- [x] Digitar, colar, Enter, Del e Backspace com seleção substituem ou apagam o trecho
+- [x] `Ctrl+C`, `Ctrl+X`, `Ctrl+V`, `Ctrl+A` no `KeyBindingRegistry`, escopo `Editor`
+- [x] Clipboard na `MainWindow`, como o `IStorageProvider` dos diálogos — o `EditorViewModel`
       continua sem um `using` do Avalonia
+- [x] O stress diferencial do undo ganhou a operação "substituir trecho": 3 sementes × 2.000
+      operações, e é ela que prova o `RecordCompound` contra o modelo ingênuo de string
+
+Registrado desta fatia:
+
+- **`Undo` já revertia na ordem certa.** Ele desfaz de trás para a frente, que é exatamente a
+  ordem de desfazer apagar-e-inserir — o `RecordCompound` não precisou de nenhum caminho novo de
+  reversão, só de um grupo com mais de uma edição. É o mesmo argumento do `Revert`/`Reapply`: um
+  caminho de código só para manter correto
+- **Enter com seleção não materializa fronteira.** `LineBreaks.ForEnter` fala do caret; com um
+  trecho selecionado, a fronteira que interessava era a do caret que acaba de deixar de existir,
+  e o Enter vira um `\n` comum sobre a substituição
+- **Colar não precisou de caso especial.** `EditorDocument.Insert` já normalizava o fim de linha e
+  já devolvia quantos caracteres de fato entraram, e `LayoutReuse.Between` já recusava um trecho
+  com `\n` e caía na paginação completa. Uma colagem multilinha atravessa tudo isso sem uma linha
+  de código nova — é o retorno das decisões da Fatia 4.2 e do reflow incremental
+- **Recortar copia antes de apagar.** A ordem inversa tiraria o texto do documento sem ter onde
+  buscá-lo de volta se a área de transferência falhasse
+- **O Avalonia 12 reescreveu o clipboard.** `IClipboard.GetTextAsync`/`SetTextAsync` não existem
+  mais; texto passa por `ClipboardExtensions.SetTextAsync`/`TryGetTextAsync`, sobre
+  `DataFormat.Text`. Terceira surpresa da mesma família, depois do `FocusChangedEventArgs` e da
+  ausência de `Control.BringIntoView(Rect)` na Fatia 4.1
+- **Copiar e colar em si continuam sem teste automatizado**: dependem do clipboard do sistema e da
+  `MainWindow`. O que dá para testar — o trecho materializado e o undo composto — está testado
 
 ### Fatia 4 — Marcação inline: negrito e itálico ⬜
 

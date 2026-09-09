@@ -139,10 +139,50 @@ public sealed class EditorViewModel
     /// </remarks>
     public void InsertLineBreak()
     {
+        // Com um trecho selecionado o Enter o substitui, e aí não há fronteira a materializar: a
+        // que interessava era a do caret que acaba de deixar de existir.
+        if (!_selection.IsEmpty)
+        {
+            Insert("\n", caretAdvance: null);
+            return;
+        }
+
         var lineBreak = LineBreaks.ForEnter(Caret, Paginated);
 
         Insert(lineBreak.Text, lineBreak.CaretDelta);
     }
+
+    /// <summary>Apaga o trecho selecionado. Devolve se havia o que apagar.</summary>
+    public bool DeleteSelection()
+    {
+        if (_selection.IsEmpty)
+        {
+            return false;
+        }
+
+        var range = _selection.Range;
+        var before = Caret.Offset;
+        var edit = _document.Delete(range.Start, range.Length);
+
+        // EditKind.Other: apagar um trecho não se junta a uma rajada de Backspace. Desfazer tem de
+        // devolver o trecho inteiro numa vez só.
+        _undo.Record(edit, EditKind.Other, before, range.Start);
+        MoveCaretAfterEdit(range.Start, CaretAffinity.Downstream);
+        MarkModified();
+        SchedulePagination();
+
+        return true;
+    }
+
+    /// <summary>O texto destacado, ou vazio quando não há seleção.</summary>
+    /// <remarks>
+    /// Materializa só o trecho: copiar uma linha não pode custar o documento inteiro, que nas 301
+    /// páginas do corpus de referência são ~2MB direto no Large Object Heap.
+    /// </remarks>
+    public string SelectedText =>
+        _selection.IsEmpty
+            ? string.Empty
+            : _document.CreateSnapshot().GetText(_selection.Range.Start, _selection.Range.Length);
 
     /// <param name="caretAdvance">
     /// Quanto o caret anda, quando quem chamou sabe mais que o comprimento inserido. É o caso do
@@ -156,34 +196,60 @@ public sealed class EditorViewModel
             return;
         }
 
+        var before = Caret.Offset;
+        var affinity = Caret.Affinity;
+        var range = _selection.Range;
+        var replacing = !_selection.IsEmpty;
+
+        // Digitar, colar ou apertar Enter com um trecho selecionado o substitui — que é o que
+        // qualquer editor faz, e é o que a seleção existe para permitir.
+        var removal = replacing ? _document.Delete(range.Start, range.Length) : PieceEdit.Empty;
+        var start = replacing ? range.Start : before;
+
         // O comprimento vem do documento, não da string: a normalização de fim de linha pode
         // encurtar o texto, e mover o caret por text.Length o deixaria adiante do buffer.
-        var before = Caret.Offset;
-        var edit = _document.Insert(before, text);
+        var insertion = _document.Insert(start, text);
 
-        if (edit.IsEmpty)
+        if (insertion.IsEmpty && removal.IsEmpty)
         {
             return;
         }
 
-        var after = before + (caretAdvance ?? edit.LengthDelta);
+        var after = start + (caretAdvance ?? insertion.LengthDelta);
 
-        // Só um caractere digitado se junta ao anterior no undo. Um Enter ou uma colagem abrem
-        // grupo próprio: desfazer tem de devolver o documento a um estado que o autor reconheça.
-        var kind = text.Length == 1 && text[0] != '\n' ? EditKind.Typing : EditKind.Other;
+        if (replacing)
+        {
+            // As duas edições num grupo só: um Ctrl+Z tem de devolver o texto que estava
+            // destacado, e não a metade dele.
+            _undo.RecordCompound([removal, insertion], before, after);
+        }
+        else
+        {
+            // Só um caractere digitado se junta ao anterior no undo. Um Enter ou uma colagem abrem
+            // grupo próprio: desfazer tem de devolver o documento a um estado que o autor reconheça.
+            var kind = text.Length == 1 && text[0] != '\n' ? EditKind.Typing : EditKind.Other;
 
-        _undo.Record(edit, kind, before, after);
+            _undo.Record(insertion, kind, before, after);
+        }
 
         // A afinidade sobrevive à digitação: quem está escrevendo no fim de uma linha quebrada
         // pela margem continua escrevendo lá, e não salta para o começo da linha de baixo a cada
-        // tecla que recoloca o caret exatamente sobre a fronteira.
-        MoveCaretAfterEdit(after, Caret.Affinity);
+        // tecla que recoloca o caret exatamente sobre a fronteira. Numa substituição ela não
+        // sobrevive a nada — a fronteira que ela descrevia estava no texto que acabou de sair.
+        MoveCaretAfterEdit(after, replacing ? CaretAffinity.Downstream : affinity);
         MarkModified();
         SchedulePagination();
     }
 
     public void DeleteBackward()
     {
+        // Com um trecho selecionado, é ele que sai — antes da guarda do início do documento, que
+        // fala do caret e não do trecho.
+        if (DeleteSelection())
+        {
+            return;
+        }
+
         if (Caret.Offset == 0)
         {
             return;
@@ -217,6 +283,11 @@ public sealed class EditorViewModel
 
     public void DeleteForward()
     {
+        if (DeleteSelection())
+        {
+            return;
+        }
+
         if (Caret.Offset >= _document.Length)
         {
             return;
