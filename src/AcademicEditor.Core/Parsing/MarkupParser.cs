@@ -130,5 +130,5 @@ public static class MarkupParser
     // a altura e o offset da linha: sem run algum, "# " recém-digitado seria medido com a altura
     // do corpo e uma linha em branco reivindicaria o offset zero do documento.
     private static IReadOnlyList<InlineRun> BuildRuns(string source, MarkupToken token, TextStyle style) =>
-        InlineMarkup.Parse(source.Substring(token.ContentStart, token.ContentLength), token.ContentStart, style);
+        AcademicMarkup.Parse(source.Substring(token.ContentStart, token.ContentLength), token.ContentStart, style);
 }
