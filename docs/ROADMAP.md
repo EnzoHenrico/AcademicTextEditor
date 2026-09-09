@@ -769,7 +769,7 @@ Registrado desta fatia:
 
 ---
 
-## Fase 5 — Mouse e seleção 🔨
+## Fase 5 — Mouse e seleção ✅
 
 **Objetivo:** o editor passa a responder ao mouse e a ter seleção. São as quatro coisas que
 separam "protótipo que se digita" de "editor que se usa": pôr o caret com um clique, selecionar
@@ -897,18 +897,50 @@ Registrado desta fatia:
 - **Copiar e colar em si continuam sem teste automatizado**: dependem do clipboard do sistema e da
   `MainWindow`. O que dá para testar — o trecho materializado e o undo composto — está testado
 
-### Fatia 4 — Marcação inline: negrito e itálico ⬜
+### Fatia 4 — Marcação inline: negrito e itálico ✅
 
 Fecha o item "Highlighting em tempo real reaproveitando os `InlineRun` do AST" da Fase 4 e cobra
 a promessa que o `LineBreaker` faz desde a Fatia 1 da Fase 3: *"o motor já está pronto para
 `**negrito**` no meio da frase"*.
 
-- [ ] `**` negrito, `*` itálico, `***` os dois; delimitador sem par sai como texto literal
-- [ ] `_` continua literal — uma regra em vez de duas, e `x_1` numa fórmula não vira itálico
-- [ ] A marcação sai com o **mesmo estilo** do texto que envolve: revelar muda a largura da
-      linha, nunca a altura. Mesma decisão do `## ` do heading
-- [ ] Nada muda fora do parser: `TextStyle` já tem `Weight` e `Italic`, o `LineBreaker` já quebra
-      sobre runs heterogêneos e já descarta os `IsMarkup`, e o `LayoutEngine` já revela por bloco
+- [x] `**` negrito, `*` itálico, `***` os dois; delimitador sem par sai como texto literal
+- [x] `_` continua literal — uma regra em vez de duas, e `x_1` numa fórmula não vira itálico
+- [x] A marcação sai com o **mesmo estilo** do texto que envolve: revelar muda a largura da
+      linha, nunca a altura. Mesma decisão do `## ` do heading, verificada com o mesmo teste
+- [x] **Nada mudou fora do parser**, e era a aposta da fatia: `TextStyle` já tinha `Weight` e
+      `Italic`, o `AvaloniaTextMeasurer` já traduzia os dois, o `LineBreaker` já quebrava sobre
+      runs heterogêneos e já descartava os `IsMarkup`, e o `LayoutEngine` já revelava por bloco.
+      Nem o motor de layout, nem o medidor, nem o renderizador foram tocados
+- [x] Pareamento por pilha, com busca do topo para baixo: `**a *b**` fecha o negrito e devolve o
+      asterisco solto ao texto. É também o que garante que os pares saiam aninhados, que é o que
+      permite ao estilo ser uma pilha na montagem
+- [x] Ênfase dentro de um título volta ao estilo do título, e não a "normal" — fechar um
+      `**negrito**` num `# título` não pode desemboldar o resto dele
+- [x] O documento de exemplo mostra a marcação já na primeira execução, como o CRLF faz com a
+      normalização de fim de linha desde a Fatia 4.2
+
+Registrado desta fatia:
+
+- **Quatro ou mais asteriscos seguidos não são delimitador**, e é o que resolve `****` sem caso
+  especial: pareá-lo daria uma ênfase vazia, que some da tela e deixa o autor sem entender para
+  onde foi o que digitou
+- **Duas condições de flanqueamento, não a regra inteira do CommonMark:** um delimitador seguido
+  de branco não abre e um precedido de branco não fecha. É o que impede `2 * 3 * 4` de virar
+  itálico. Colado em palavra, `pre*meio*pos` enfatiza — que é o que o CommonMark também faz
+- **O caret não fica preso em marcação escondida**, e não foi preciso tocar no `CaretNavigator`
+  para isso: revelar é por bloco, e um bloco aqui é uma linha da fonte. No instante em que o
+  caret entra na linha, todo o `**` dela aparece e as setas andam sobre ele como sobre qualquer
+  letra. Estar dentro de marcação escondida exigiria o caret estar em outra linha
+- **Chegar por baixo a uma linha que termina em marcação pousa um delimitador antes do fim.** Com
+  a marcação escondida a linha cobre até o último caractere visível, e é para lá que `←` e `↑`
+  mandam o caret; a repaginação revela em seguida, e aí o `**` final aparece à direita dele. Nada
+  fica inalcançável — `End` e `→` chegam lá —, e é o espelho do que o heading já fazia pelo outro
+  lado
+- **Sem escape (`\*`).** Exigiria um segundo passe no tokenizer e não há demanda; entra quando
+  alguém precisar de um asterisco literal dentro de uma frase enfatizada
+- **Sublinhado ficou de fora por decisão de norma**, não por custo: ABNT e APA usam itálico em
+  texto corrido, e o Markdown não tem sintaxe própria para ele. A sintaxe se decide quando o uso
+  aparecer
 
 ---
 
@@ -929,6 +961,10 @@ a promessa que o `LineBreaker` faz desde a Fatia 1 da Fase 3: *"o motor já est�
 Nada aqui está prometido; é estacionamento para não perder a ideia nem inflar as fases acima.
 
 - Justificação de texto Knuth-Plass (o MVP usa greedy word-wrap)
+- Sublinhado — Markdown não tem sintaxe para ele, e ABNT e APA usam itálico em texto corrido. A
+  sintaxe se decide quando o uso aparecer
+- Escape de marcação inline (`\*`), para um asterisco literal dentro de uma frase enfatizada
+- Rolagem automática ao arrastar a seleção para fora da janela
 - Seleção múltipla (`IReadOnlyList<SelectionRange>`) — veio da Fase 4. Multi-cursor é feature de
   code editor; num editor de tese a lista plural custaria indireção em cada tecla, cada desenho e
   cada edição por algo que talvez nunca venha

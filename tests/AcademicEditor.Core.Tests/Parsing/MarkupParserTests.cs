@@ -226,6 +226,166 @@ public sealed class MarkupParserTests
     }
 
     // Um heading tem dois runs: marcação e texto. O que interessa aos testes de conteúdo é o texto.
+    // ------------------------------------------------------------------------------------------
+    // Marcação inline.
+    // ------------------------------------------------------------------------------------------
+
+    private static readonly TextStyle Bold = TextStyle.Body with { Weight = FontWeightKind.Bold };
+    private static readonly TextStyle Italic = TextStyle.Body with { Italic = true };
+    private static readonly TextStyle BoldItalic = TextStyle.Body with
+    {
+        Weight = FontWeightKind.Bold,
+        Italic = true,
+    };
+
+    [Fact]
+    public void Negrito_vira_tres_runs_com_a_marcacao_no_mesmo_estilo()
+    {
+        var runs = RunsOf("a **b** c");
+
+        Assert.Collection(
+            runs,
+            run => AssertRun(run, "a ", 0, TextStyle.Body, markup: false),
+            run => AssertRun(run, "**", 2, Bold, markup: true),
+            run => AssertRun(run, "b", 4, Bold, markup: false),
+            run => AssertRun(run, "**", 5, Bold, markup: true),
+            run => AssertRun(run, " c", 7, TextStyle.Body, markup: false));
+    }
+
+    [Fact]
+    public void Italico_e_um_asterisco_so()
+    {
+        Assert.Collection(
+            RunsOf("*x*"),
+            run => AssertRun(run, "*", 0, Italic, markup: true),
+            run => AssertRun(run, "x", 1, Italic, markup: false),
+            run => AssertRun(run, "*", 2, Italic, markup: true));
+    }
+
+    [Fact]
+    public void Tres_asteriscos_sao_negrito_e_italico()
+    {
+        Assert.Collection(
+            RunsOf("***x***"),
+            run => AssertRun(run, "***", 0, BoldItalic, markup: true),
+            run => AssertRun(run, "x", 3, BoldItalic, markup: false),
+            run => AssertRun(run, "***", 4, BoldItalic, markup: true));
+    }
+
+    [Fact]
+    public void Enfase_aninha()
+    {
+        Assert.Collection(
+            RunsOf("**a *b* c**"),
+            run => AssertRun(run, "**", 0, Bold, markup: true),
+            run => AssertRun(run, "a ", 2, Bold, markup: false),
+            run => AssertRun(run, "*", 4, BoldItalic, markup: true),
+            run => AssertRun(run, "b", 5, BoldItalic, markup: false),
+            run => AssertRun(run, "*", 6, BoldItalic, markup: true),
+            run => AssertRun(run, " c", 7, Bold, markup: false),
+            run => AssertRun(run, "**", 9, Bold, markup: true));
+    }
+
+    // O que não casa é texto. O autor escreveu asteriscos, e asteriscos é o que ele vê — inclusive
+    // no caso em que um fechamento acha a abertura de baixo e deixa a de cima solta.
+    [Theory]
+    [InlineData("a * b")]
+    [InlineData("**sem par")]
+    [InlineData("****")]
+    [InlineData("2 * 3 * 4")]
+    [InlineData("x_1 e y_2")]
+    public void Sem_par_e_texto_literal(string source)
+    {
+        var run = Assert.Single(RunsOf(source));
+
+        AssertRun(run, source, 0, TextStyle.Body, markup: false);
+    }
+
+    [Fact]
+    public void Fechamento_devolve_ao_texto_a_abertura_que_ficou_por_cima()
+    {
+        Assert.Collection(
+            RunsOf("**a *b**"),
+            run => AssertRun(run, "**", 0, Bold, markup: true),
+            run => AssertRun(run, "a *b", 2, Bold, markup: false),
+            run => AssertRun(run, "**", 6, Bold, markup: true));
+    }
+
+    // Ênfase vazia sumiria da tela e deixaria o autor sem entender para onde foi o que digitou.
+    [Fact]
+    public void Enfase_vazia_nao_e_enfase()
+    {
+        var run = Assert.Single(RunsOf("a****b"));
+
+        AssertRun(run, "a****b", 0, TextStyle.Body, markup: false);
+    }
+
+    // Não há regra de flanqueamento além do branco: colado em palavra, o asterisco enfatiza, que
+    // é o que o CommonMark também faz.
+    [Fact]
+    public void Asterisco_colado_em_palavra_enfatiza()
+    {
+        Assert.Collection(
+            RunsOf("pre*meio*pos"),
+            run => AssertRun(run, "pre", 0, TextStyle.Body, markup: false),
+            run => AssertRun(run, "*", 3, Italic, markup: true),
+            run => AssertRun(run, "meio", 4, Italic, markup: false),
+            run => AssertRun(run, "*", 8, Italic, markup: true),
+            run => AssertRun(run, "pos", 9, TextStyle.Body, markup: false));
+    }
+
+    // Fechar um **negrito** dentro de um título não pode tirar o negrito do resto do título: o
+    // estilo volta ao de fora, e não a "normal".
+    [Fact]
+    public void Enfase_dentro_de_titulo_volta_ao_estilo_do_titulo()
+    {
+        var heading = Assert.IsType<HeadingNode>(Assert.Single(MarkupParser.Parse("# a *b* c").Blocks));
+        var title = heading.Runs[1].Style;
+
+        Assert.Collection(
+            heading.Runs,
+            run => AssertRun(run, "# ", 0, title, markup: true),
+            run => AssertRun(run, "a ", 2, title, markup: false),
+            run => AssertRun(run, "*", 4, title with { Italic = true }, markup: true),
+            run => AssertRun(run, "b", 5, title with { Italic = true }, markup: false),
+            run => AssertRun(run, "*", 6, title with { Italic = true }, markup: true),
+            run => AssertRun(run, " c", 7, title, markup: false));
+    }
+
+    // A invariante que mantém o caret funcionando: todo caractere da linha entra em exatamente um
+    // run, na ordem, cópia literal.
+    [Theory]
+    [InlineData("a **b** c")]
+    [InlineData("***x***")]
+    [InlineData("**a *b* c**")]
+    [InlineData("**a *b**")]
+    [InlineData("a * b")]
+    public void Os_runs_recobrem_a_linha_sem_buraco_nem_sobra(string source)
+    {
+        var runs = RunsOf(source);
+        var position = 0;
+
+        foreach (var run in runs)
+        {
+            Assert.Equal(position, run.SourceStart);
+            position = run.SourceEnd;
+        }
+
+        Assert.Equal(source.Length, position);
+        Assert.Equal(source, string.Concat(runs.Select(run => run.Text)));
+    }
+
+    private static IReadOnlyList<InlineRun> RunsOf(string source) =>
+        Assert.Single(MarkupParser.Parse(source).Blocks).Runs;
+
+    private static void AssertRun(InlineRun run, string text, int sourceStart, TextStyle style, bool markup)
+    {
+        Assert.Equal(text, run.Text);
+        Assert.Equal(sourceStart, run.SourceStart);
+        Assert.Equal(style, run.Style);
+        Assert.Equal(markup, run.IsMarkup);
+    }
+
     private static string SingleRunText(BlockNode block) =>
         Assert.Single(block.Runs, run => !run.IsMarkup).Text;
 }

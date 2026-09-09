@@ -202,6 +202,61 @@ public sealed class LayoutEngineTests
             () => LayoutEngine.Layout(MarkupParser.Parse("texto"), impossible, Measurer));
     }
 
+    // A marcação inline segue a mesma regra da de bloco: escondida enquanto o caret está fora,
+    // revelada quando ele entra. É o mecanismo que a Fatia 5.1 da Fase 3 montou para o "## ".
+    [Fact]
+    public void Marcacao_inline_e_escondida_fora_do_bloco_do_caret()
+    {
+        Assert.Equal("a b c", TextOf(Layout("a **b** c", caretOffset: -1).Pages[0].Lines[0]));
+    }
+
+    [Fact]
+    public void Marcacao_inline_e_revelada_no_bloco_do_caret()
+    {
+        Assert.Equal("a **b** c", TextOf(Layout("a **b** c", caretOffset: 5).Pages[0].Lines[0]));
+    }
+
+    // A marcação carrega o estilo do texto que envolve, então revelá-la acrescenta largura de um
+    // estilo que a linha já tinha. Se mudasse a altura, o documento subiria e desceria a cada vez
+    // que o caret entrasse e saísse de uma palavra em negrito.
+    [Fact]
+    public void Revelar_marcacao_inline_nao_muda_a_altura_da_linha()
+    {
+        var hidden = Layout("a **b** c", caretOffset: -1).Pages[0].Lines[0];
+        var revealed = Layout("a **b** c", caretOffset: 5).Pages[0].Lines[0];
+
+        Assert.Equal(hidden.HeightPt, revealed.HeightPt);
+        Assert.Equal(hidden.BaselinePt, revealed.BaselinePt);
+
+        // O trecho da fonte que a linha cobre é o mesmo — a marcação está no meio dela —, e o que
+        // muda é a tinta: quatro asteriscos a mais.
+        Assert.Equal(hidden.SourceLength, revealed.SourceLength);
+        Assert.Equal(InkEndPt(hidden) + (4 * Measurer.CharWidthPt), InkEndPt(revealed));
+    }
+
+    // O negrito muda o estilo no meio da linha, e a quebra por largura tem de continuar caindo no
+    // mesmo lugar e continuar cobrindo a fonte sem buraco.
+    [Fact]
+    public void Linha_com_negrito_quebra_e_continua_contigua()
+    {
+        // Revelada, para que todo caractere da fonte tenha posição na tela.
+        const string Source = "aaaa **bbbb** cccc dddd";
+
+        var lines = Layout(Source, caretOffset: 0).Pages.SelectMany(page => page.Lines).ToArray();
+
+        Assert.True(lines.Length > 1, "esperava que a linha quebrasse pela largura");
+        Assert.Equal(0, lines[0].SourceStart);
+        Assert.Equal(Source.Length, lines[^1].SourceEnd);
+
+        for (var index = 1; index < lines.Length; index++)
+        {
+            Assert.Equal(lines[index - 1].SourceEnd, lines[index].SourceStart);
+        }
+    }
+
+    private static double InkEndPt(LaidOutLine line) =>
+        line.Runs[^1].XPt + line.Runs[^1].WidthPt;
+
     private static string TextOf(LaidOutLine line) => string.Concat(line.Runs.Select(run => run.Text));
 
     private static PaginatedDocument Layout(string source, int caretOffset) =>
