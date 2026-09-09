@@ -1,6 +1,7 @@
 using AcademicEditor.App.Rendering;
 using AcademicEditor.App.ViewModels;
 
+using AcademicEditor.Core.Layout;
 using AcademicEditor.Core.State;
 
 using Avalonia;
@@ -271,40 +272,32 @@ public sealed class PageSurface : Control
     {
         base.OnPointerMoved(e);
 
-        var position = e.GetPosition(this);
+        if (_viewModel is null
+            || PageRenderer.HitTest(_viewModel.Paginated, e.GetPosition(this), Bounds.Width) is not { } hit)
+        {
+            return;
+        }
 
-        Cursor = IsOverContent(position) ? TextCursor : ArrowCursor;
+        Cursor = IsOverContent(hit, _viewModel.Paginated.Settings) ? TextCursor : ArrowCursor;
 
         // Arrastando: o ponto vira a ponta ativa da seleção, e a âncora fica onde o botão desceu.
-        if (_dragging
-            && _viewModel is not null
-            && PageRenderer.HitTest(_viewModel.Paginated, position, Bounds.Width) is { } hit)
+        if (_dragging)
         {
             _viewModel.PlaceCaretAt(hit.PageIndex, hit.XPt, hit.YPt, extend: true);
         }
     }
 
-    /// <summary>O ponto está dentro da área de conteúdo de alguma folha?</summary>
+    /// <summary>O ponto está dentro da área de conteúdo da folha, e não na margem nem no vão?</summary>
     /// <remarks>
-    /// Usa o resultado <b>cru</b> do <c>HitTest</c>, que não grampeia: é justamente o sinal fora do
-    /// intervalo que distingue o papel da margem. Grampear ali tornaria esta pergunta impossível
-    /// de responder sem refazer a conta.
+    /// Lê o resultado <b>cru</b> do <c>HitTest</c>, que não grampeia: é justamente o sinal fora do
+    /// intervalo que distingue o papel da margem. Grampear lá tornaria esta pergunta impossível de
+    /// responder sem refazer a conta.
     /// </remarks>
-    private bool IsOverContent(Point dip)
-    {
-        if (_viewModel is null
-            || PageRenderer.HitTest(_viewModel.Paginated, dip, Bounds.Width) is not { } hit)
-        {
-            return false;
-        }
-
-        var settings = _viewModel.Paginated.Settings;
-
-        return hit.XPt >= 0.0
-            && hit.XPt <= settings.ContentWidthPt
-            && hit.YPt >= 0.0
-            && hit.YPt <= settings.ContentHeightPt;
-    }
+    private static bool IsOverContent((int PageIndex, double XPt, double YPt) hit, PageSettings settings) =>
+        hit.XPt >= 0.0
+        && hit.XPt <= settings.ContentWidthPt
+        && hit.YPt >= 0.0
+        && hit.YPt <= settings.ContentHeightPt;
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
