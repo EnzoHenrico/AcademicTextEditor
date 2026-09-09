@@ -621,6 +621,47 @@ Registrado desta fatia:
 - **O page breaker ainda reempilha tudo.** Parar cedo quando uma quebra de página cai na mesma
   linha de antes ("reflow until resync") é o próximo corte, se 11ms incomodar
 
+### Digitação: coalescer em vez de cancelar ✅
+
+Com o culling e o reflow no lugar, sobrou o pior sintoma: **segurar uma tecla não mostrava nada e o
+caret congelava; ao soltar, tudo aparecia de uma vez.**
+
+O culpado era o debounce de 50ms com teto de 120ms, e o comentário dele descrevia este mesmo
+sintoma como algo já resolvido na Fatia 4.1. Estava resolvido pela metade: **o teto garantia que o
+layout começasse em até 120ms, não que ele terminasse.** `SchedulePagination` abria com
+`_pending?.Cancel()`, e o token ia para dentro do `Task.Run` e do `LayoutEngine.Layout`.
+
+- [x] O ciclo que travava: um layout passa do intervalo de repetição do teclado (~33ms — um pico de
+      GC basta) → a tecla seguinte o mata antes de publicar → o relógio da última publicação não
+      avança → a espera desaba para zero → daí em diante cada tecla mata a anterior, e nada publica
+      até soltar
+- [x] **Zerar o debounce pioraria**, que era a hipótese natural: toda tecla passaria a iniciar um
+      layout que a seguinte mata, com o mesmo desfecho e mais trabalho jogado fora. O defeito não
+      era o valor do número, era cancelar quem já estava trabalhando
+- [x] Trocado por **um layout em voo por vez, com pedido pendente**. Quem chega durante um layout só
+      marca; quem está rodando atende ao terminar. **Inanição deixa de ser possível por
+      construção** — não há cancelamento no caminho da digitação
+- [x] A taxa se auto-regula: publica-se na velocidade em que os layouts terminam. Com os 11ms do
+      reflow, isso é mais rápido que a repetição do teclado, e cada tecla ganha o seu quadro
+- [x] Sumiram junto `DebounceMilliseconds`, `MaxLatencyMilliseconds`, o `CancellationTokenSource`, o
+      relógio da última publicação, as duas gerações e o `Dispatcher.Post`. A guarda de geração
+      existia porque um layout cancelado podia chegar depois de um mais novo; com um de cada vez, a
+      ordem é garantida. O `ConfigureAwait(true)` traz a continuação para a UI thread, onde o
+      estado vive
+
+Registrado desta fatia:
+
+- **Esta é a única das quatro que não pôde ser medida antes.** As outras três saíram de um número;
+  esta saiu de abrir o app e segurar uma tecla. O pipeline depende do dispatcher do Avalonia, que
+  não roda laço de mensagens sob `SetupWithoutStarting`, e `EditorViewModel` vive no App, sem teste
+- **Cada layout ainda aloca o documento inteiro como string** — ~2MB nas 301 páginas, o que passa
+  dos 85KB do **Large Object Heap** e cobra uma coleta de geração 2, que pausa a UI. É a explicação
+  mais provável para um layout estourar os 33ms e disparar o ciclo acima. `TextBufferSnapshot` já
+  tem `CopyTo(Span<char>)` esperando por um buffer reaproveitado, e o comentário de lá já previa
+  isto. Próximo alvo, com medição antes
+- **O laço captura exceção e reporta.** Sem isso, uma falha dentro dele deixaria o documento
+  congelado sem explicação nenhuma na tela
+
 ### Culling do desenho ✅
 
 Aberta depois de abrir o documento de 301 páginas no app e ele ficar "consistentemente lento, como

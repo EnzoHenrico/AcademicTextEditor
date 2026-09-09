@@ -5,8 +5,6 @@ using AcademicEditor.Core.Parsing;
 using AcademicEditor.Core.State;
 using AcademicEditor.Core.Text;
 
-using Avalonia.Threading;
-
 namespace AcademicEditor.App.ViewModels;
 
 /// <summary>
@@ -19,28 +17,17 @@ namespace AcademicEditor.App.ViewModels;
 /// </remarks>
 public sealed class EditorViewModel
 {
-    // Curto o bastante para a paginação parecer instantânea, longo o bastante para que uma
-    // rajada de digitação vire um layout só. O número definitivo sai da medição com documento
-    // de ~300 páginas (Fatia 6); até lá, este é um chute informado.
-    private const int DebounceMilliseconds = 50;
-
-    // Teto de espera. Sem ele, o debounce inanição: a repetição automática do teclado dispara a
-    // cada ~33-40ms, menor que o debounce, então cada tecla cancelava a repaginação pendente
-    // antes que ela rodasse e a tela só atualizava ao soltar a tecla. Com o teto, segurar uma
-    // tecla repagina ~8x/s e a digitação normal continua coalescendo. Mesmo chute informado que
-    // o debounce, e mede junto com ele na Fatia 6.
-    private const int MaxLatencyMilliseconds = 120;
-
     private readonly ITextMeasurer _measurer;
     private readonly IDocumentStorage _storage;
 
     private EditorDocument _document;
     private UndoRedoStack _undo;
 
-    private CancellationTokenSource? _pending;
-    private long _lastPublishedAtMs;
-    private int _requestedGeneration;
-    private int _publishedGeneration;
+    // Um layout em voo por vez, e um pedido pendente. Não há mais token de cancelamento: matar a
+    // repaginação em andamento era o que fazia a tela parar enquanto uma tecla ficava pressionada.
+    private bool _paginating;
+    private bool _pendingPagination;
+
     private PageSettings _pageSettings;
 
     // O texto que gerou o layout publicado. É contra ele que a próxima paginação descobre o que
@@ -69,7 +56,6 @@ public sealed class EditorViewModel
         // No começo do documento, não no fim: é onde todo editor põe o caret ao abrir um
         // arquivo — e, com a rolagem automática, deixá-lo no fim abriria o app na última folha.
         _caret = new Caret(0, 0.0);
-        _lastPublishedAtMs = Environment.TickCount64;
         Paginated = PaginatedDocument.Empty(pageSettings);
 
         SchedulePagination();
@@ -415,66 +401,58 @@ public sealed class EditorViewModel
         && char.IsLowSurrogate(_document.CharAt(offset + 1));
 
     /// <summary>
-    /// Pede uma repaginação. Cancela a anterior, espera o debounce, pagina fora da UI thread e
-    /// publica de volta nela.
+    /// Pede uma repaginação: um layout em voo por vez, e o próximo começa assim que ele termina.
     /// </summary>
     /// <remarks>
-    /// O snapshot é tirado <b>aqui</b>, na UI thread, e não lá dentro: é o que garante que o
-    /// layout descreva o texto no momento em que foi pedido, mesmo que a digitação continue.
+    /// <para>
+    /// <b>Coalescer, não cancelar.</b> A versão anterior tinha debounce de 50ms com teto de 120ms
+    /// e matava a repaginação pendente a cada tecla. O teto garantia que o layout <i>começasse</i>
+    /// em até 120ms, mas nada garantia que ele <i>terminasse</i>: bastava um layout passar do
+    /// intervalo de repetição do teclado (~33ms — um pico de GC basta) para a tecla seguinte
+    /// matá-lo, o relógio da última publicação não avançar, a espera desabar para zero e cada
+    /// tecla passar a matar a anterior. A tela travava até soltar a tecla.
+    /// </para>
+    /// <para>
+    /// Aqui a inanição não é possível: nada é cancelado. Quem chega durante um layout só marca o
+    /// pedido, e quem está rodando o atende ao terminar. A taxa se auto-regula — publica-se na
+    /// velocidade em que os layouts terminam — e uma rajada continua virando um layout só.
+    /// </para>
     /// </remarks>
     private void SchedulePagination()
     {
-        _pending?.Cancel();
+        _pendingPagination = true;
 
-        // O CancellationTokenSource não é descartado. Sem timer e sem registro pendente, ele é
-        // memória gerenciada comum, que o GC recolhe; descartá-lo corretamente exigiria
-        // sincronizar a UI thread com a thread do layout para nada.
-        var cancellation = new CancellationTokenSource();
-        _pending = cancellation;
-
-        var generation = ++_requestedGeneration;
-        var snapshot = _document.CreateSnapshot();
-        var settings = _pageSettings;
-        var caretOffset = _caret.Offset;
-        // A espera é contada desde a última publicação, não desde este pedido: sob repetição de
-        // tecla ela encolhe a cada tecla até zerar no teto, publica, e recomeça inteira. O
-        // resultado é uma publicação a cada MaxLatency, sem perder a coalescência no meio.
-        var sincePublish = Environment.TickCount64 - _lastPublishedAtMs;
-        var delay = (int)Math.Clamp(MaxLatencyMilliseconds - sincePublish, 0, DebounceMilliseconds);
-
-        // O par (texto publicado, layout publicado) é lido aqui, na UI thread, e viaja junto: os
-        // dois são trocados na mesma linha do Publish, então nunca chegam lá descasados.
-        _ = PaginateAsync(
-            snapshot,
-            settings,
-            caretOffset,
-            new Published(_publishedSource, Paginated),
-            generation,
-            delay,
-            cancellation.Token);
+        if (!_paginating)
+        {
+            _ = PaginateWhileDirtyAsync();
+        }
     }
 
     /// <summary>O que foi publicado da última vez: o texto e o layout que saiu dele.</summary>
     private readonly record struct Published(string Source, PaginatedDocument Document);
 
-    private async Task PaginateAsync(
-        TextBufferSnapshot snapshot,
-        PageSettings settings,
-        int caretOffset,
-        Published published,
-        int generation,
-        int delayMilliseconds,
-        CancellationToken cancellationToken)
+    private async Task PaginateWhileDirtyAsync()
     {
+        _paginating = true;
+
         try
         {
-            if (delayMilliseconds > 0)
+            while (_pendingPagination)
             {
-                await Task.Delay(delayMilliseconds, cancellationToken).ConfigureAwait(false);
-            }
+                _pendingPagination = false;
 
-            var laidOut = await Task.Run(
-                () =>
+                // Tudo lido aqui, na UI thread, e por isso descrevendo o mesmo instante: o
+                // snapshot do buffer, a geometria, o caret, e o par (texto, layout) publicados —
+                // que são trocados na mesma linha do Publish e nunca chegam lá descasados.
+                var snapshot = _document.CreateSnapshot();
+                var settings = _pageSettings;
+                var caretOffset = _caret.Offset;
+                var published = new Published(_publishedSource, Paginated);
+
+                // ConfigureAwait(true): a continuação volta para a UI thread, então Publish e a
+                // condição do laço são lidos onde o estado vive. Some o Dispatcher.Post, e some a
+                // guarda de geração — com um layout de cada vez, a ordem já é garantida.
+                var laidOut = await Task.Run(() =>
                 {
                     var source = snapshot.GetText();
 
@@ -483,30 +461,26 @@ public sealed class EditorViewModel
                         settings,
                         _measurer,
                         caretOffset,
-                        LayoutReuse.Between(published.Source, source, published.Document),
-                        cancellationToken));
-                },
-                cancellationToken).ConfigureAwait(false);
+                        LayoutReuse.Between(published.Source, source, published.Document)));
+                }).ConfigureAwait(true);
 
-            Dispatcher.UIThread.Post(() => Publish(laidOut.Document, laidOut.Source, generation));
+                Publish(laidOut.Document, laidOut.Source);
+            }
         }
-        catch (OperationCanceledException)
+        catch (Exception exception)
         {
-            // Repaginação obsoleta: a tecla seguinte já pediu outra. Não é erro, é o caso comum.
+            // O laço não pode morrer em silêncio: sem isto uma exceção deixaria o documento
+            // congelado sem explicação. O finally devolve o estado, e a tecla seguinte recomeça.
+            Report($"erro ao paginar: {exception.Message}");
+        }
+        finally
+        {
+            _paginating = false;
         }
     }
 
-    private void Publish(PaginatedDocument paginated, string source, int generation)
+    private void Publish(PaginatedDocument paginated, string source)
     {
-        // Cancelar não é instantâneo: um layout antigo pode chegar depois de um mais novo já ter
-        // sido publicado. A geração é o que impede o documento de andar para trás na tela.
-        if (generation <= _publishedGeneration)
-        {
-            return;
-        }
-
-        _publishedGeneration = generation;
-        _lastPublishedAtMs = Environment.TickCount64;
         Paginated = paginated;
         _publishedSource = source;
 

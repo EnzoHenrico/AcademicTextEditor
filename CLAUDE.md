@@ -64,8 +64,14 @@ num exportador PDF/CLI depois. A única costura Core↔App é a interface `IText
   quando a alteração não cria nem apaga `\n` — aí os blocos são os mesmos um a um e só um é
   requebrado; qualquer outra coisa pagina do zero. **O motor recusa em vez de arriscar:** offset
   errado numa linha reaproveitada não quebra o desenho, quebra o caret, longe de onde errou.
-- **Layout roda em background** (`Task.Run`) e publica via `Dispatcher.UIThread.Post`.
+- **Layout roda em background** (`Task.Run`) e a continuação volta para a UI thread.
   `PaginatedDocument` e filhos são imutáveis: troca de referência atômica, sem locks.
+- **A repaginação coalesce; nunca cancela.** Um layout em voo por vez e um pedido pendente: quem
+  chega durante um layout só marca, e quem está rodando atende ao terminar. Cancelar o layout em
+  andamento — o que o debounce com teto fazia — deixava a tela parada enquanto uma tecla ficava
+  pressionada: bastava um layout passar do intervalo de repetição do teclado para cada tecla matar
+  a anterior, indefinidamente. Sem cancelamento, inanição não é possível, a taxa se auto-regula
+  pela duração do layout, e nada de trabalho é jogado fora.
 - **`Render(DrawingContext)` só desenha** — nunca faz I/O nem recalcula layout.
 - **`Render` desenha só as folhas que o viewport cruza**, e o intervalo sai por aritmética sobre o
   passo da pilha, não por varredura. Sem isso, um documento de 301 páginas custava 249ms por quadro
