@@ -57,7 +57,7 @@ com o Core vazio é trivial; depois de 40 arquivos de motor, é refatoração ca
 
 ---
 
-## Fase 3 — MVP 🔨
+## Fase 3 — MVP ✅
 
 **Objetivo:** abrir um `.md`, editar, ver a paginação recalcular, salvar, reabrir e obter o
 mesmo conteúdo. É aqui que o diferencial do produto (paginação como layout) fica de pé.
@@ -505,7 +505,7 @@ Registrado desta fatia:
   sem ter proposto a alternativa antes
 
 ### Fatia 6 — Fechamento da fase
-- [ ] Teste manual end-to-end via `./dev.sh run`
+- [x] Teste manual end-to-end via `./dev.sh run`
 - [x] Documento longo (~300 páginas) para medir latência de repaginação e decidir se o
       reflow incremental precisa ser antecipado da Fase 4
 
@@ -561,17 +561,33 @@ Decisão que sai daí:
 
 ---
 
-## Fase 4 — Editor de verdade 🔨
+## Fase 4 — Desempenho com documento longo ✅
+
+**A fase mudou de nome porque mudou de assunto.** Abriu chamada "Editor de verdade", com quatro
+itens de editor e nenhum de desempenho; foi inteiramente consumida pelo que a medição da Fatia 6
+apontou, e as quatro fatias entregues são as quatro que aquele número pediu — cache de medição,
+reflow incremental, culling do desenho e coalescer a repaginação. O commit de merge já a chamava
+assim. O nome novo é o que ela é; os itens de editor que sobraram foram para onde pertencem, e
+estão na tabela abaixo.
 
 - [x] **Cache de medição de texto** por `(texto, estilo)` — não estava nesta lista, entrou na
       frente porque a medição da Fatia 6 mostrou que era ele, e não o reflow, o primeiro gargalo
 - [x] **Reflow incremental** — em um nível, não três: a medição mostrou que o parser é de graça
-- [ ] Highlighting em tempo real reaproveitando os `InlineRun` do AST (sem motor separado)
-- [ ] Seleção múltipla (`IReadOnlyList<SelectionRange>`)
-- [ ] Geometria exata do caret via `LaidOutLine.SourceStart` ↔ `TextLayout`
-- [ ] Chords reais registrados (ex: `Ctrl+K, Ctrl+S`)
 - [x] **Culling de páginas fora do viewport no `Render`** — subiu na fila pelo mesmo motivo do
       cache: a medição apontou para ele
+- [x] **Digitação: coalescer a repaginação em vez de cancelá-la** — o único dos quatro que não
+      saiu de um número, e sim de abrir o app e segurar uma tecla
+- [x] Geometria exata do caret via `LaidOutLine.SourceStart` ↔ `TextLayout` — **satisfeita desde
+      a Fatia 4 da Fase 3**, e o registro dela já dizia isso: medir o prefixo do run dá a posição
+      exata, e foi assim que ela nasceu
+
+Os três itens de editor que restavam:
+
+| item | destino | por quê |
+|---|---|---|
+| Highlighting em tempo real reaproveitando os `InlineRun` do AST | Fase 5, Fatia 4 | é a mesma máquina: marcação inline é o parser emitindo runs de estilos diferentes, que é o que "highlighting sem motor separado" quer dizer |
+| Seleção múltipla (`IReadOnlyList<SelectionRange>`) | estacionamento de ideias | a Fase 5 faz **uma** seleção. Multi-cursor é feature de code editor, e a lista plural custaria indireção em cada tecla, cada desenho e cada edição por algo que talvez nunca venha |
+| Chords reais registrados (ex: `Ctrl+K, Ctrl+S`) | estacionamento de ideias | `KeyBindingRegistry` já suporta N passos desde a Fatia 5 e tem teste; o que falta não é máquina, é um comando que queira um chord |
 
 ### Reflow incremental ✅
 
@@ -753,7 +769,92 @@ Registrado desta fatia:
 
 ---
 
-## Fase 5 — Documento acadêmico ⬜
+## Fase 5 — Mouse e seleção 🔨
+
+**Objetivo:** o editor passa a responder ao mouse e a ter seleção. São as quatro coisas que
+separam "protótipo que se digita" de "editor que se usa": pôr o caret com um clique, selecionar
+com o mouse e com o teclado, recortar/copiar/colar, e ver negrito e itálico formatados.
+
+Como na Fase 3, em fatias verticais. A ordem não é arbitrária: a Fatia 1 constrói a entrada por
+ponto, de que a Fatia 2 precisa para arrastar; a Fatia 2 constrói a seleção, de que a Fatia 3
+precisa para copiar. A Fatia 4 é independente das outras três e podia vir em qualquer lugar.
+
+### Fatia 1 — Ponteiro: caret por clique e cursor de texto ✅
+
+- [x] `CaretNavigator.AtPoint(pageIndex, xPt, yPt, …)` — o caminho que faltava. Todo movimento
+      até aqui partia de um caret e chegava a outro; não havia como **entrar** por um ponto da
+      folha
+- [x] O ponto chega em pontos, relativo ao canto da área de conteúdo — a mesma convenção que
+      `CaretPosition` devolve, e é o que torna isto o inverso exato de `CaretGeometry.Locate`
+- [x] **Todo clique pousa em algum lugar.** Acima da primeira linha e abaixo da última, nos
+      extremos da folha; à esquerda e à direita da margem, nos extremos da linha; numa folha sem
+      linha alguma, na vizinha com conteúdo — para trás primeiro, porque o caret pertence ao texto
+      que a quebra encerrou, não ao que ainda não começou
+- [x] Marcador de bloco recebe o caret no início, como as setas já faziam pelo `Stop()`
+- [x] `PageRenderer.HitTest` — o inverso de `CaretRectDip`, ao lado dele, pelo motivo que aquele
+      método já documenta: a soma de vão, origem da folha e margem recalculada em outro arquivo é
+      como as duas contas divergem uma da outra depois. A folha sai por aritmética, não por
+      varredura — a mesma divisão pelo passo que o culling usa
+- [x] Cursor I-beam dentro da área de conteúdo, seta na margem e no vão entre folhas
+- [x] `AtPoint` é o inverso de `Locate`, verificado como propriedade: ir e voltar devolve o mesmo
+      offset em **toda** posição que uma linha cobre, nas duas afinidades, em três documentos
+
+Registrado desta fatia:
+
+- **O grampeamento tem um dono só, e é o Core.** `HitTest` devolve o ponto **cru** — `YPt`
+  negativo acima do texto, `XPt` maior que a largura útil à direita da margem — e é `AtPoint` que
+  o traz para dentro. Foi o que permitiu a regra "todo clique pousa em algum lugar" ter teste sem
+  subsistema gráfico, e é também o que faz o cursor funcionar: o sinal fora do intervalo é
+  exatamente o que distingue o papel da margem, e grampear no renderizador tornaria essa pergunta
+  impossível de responder sem refazer a conta
+- **Folha sem linha alguma o parser já não produz.** Desde que o `\page` passou a ocupar uma linha
+  desenhada (Fatia 5.1 da Fase 3), toda folha tem ao menos o marcador — a ressalva que
+  `CaretGeometry.PreviousLine` carrega no comentário está desatualizada quanto à rota, não quanto
+  à regra. O caso continua tratado e continua testado, com o documento montado à mão
+- **O quarto argumento para `tests/AcademicEditor.App.Tests/`, e o primeiro com asserção óbvia.**
+  `HitTest(CaretRectDip(c)) == c` é uma propriedade de uma linha que pegaria um sinal trocado na
+  hora, e não tem onde morar: `PageRenderer` depende de `Rect` do Avalonia e `Core.Tests` não
+  referencia o App. O que dá para testar do lado do Core — o round-trip `AtPoint`/`Locate` — está
+  testado; o que sobra é a conversão DIP↔pt, verificada à mão
+
+### Fatia 2 — Seleção: mouse e teclado ⬜
+
+- [ ] `Selection(Anchor, Caret)` no Core. Âncora é offset nu; a ponta ativa é um `Caret` inteiro,
+      porque ela **é** o caret — com afinidade e coluna alvo
+- [ ] `SelectionGeometry.RectsFor` — um retângulo por linha visual que o trecho cruza
+- [ ] `WordBoundaries.WordAt` para o duplo clique; o triplo é a linha **visual**, a mesma
+      definição que Home e End já usam
+- [ ] Os oito `MoveCaret*` do ViewModel ganham `extend`. **O `CaretNavigator` não muda uma
+      linha:** quem mantém ou recolhe a âncora é o ViewModel
+- [ ] Arrastar (`ClickCount` 1/2/3), `Shift+setas`, `Shift+Home/End`, `Shift+PageUp/PageDown`
+- [ ] Retângulos desenhados atrás do texto, só nas folhas que o culling já selecionou
+
+### Fatia 3 — Recortar, copiar, colar e apagar a seleção ⬜
+
+- [ ] `TextBufferSnapshot.GetText(start, length)` — copiar uma linha não pode materializar o
+      documento inteiro
+- [ ] `UndoRedoStack.RecordCompound` — substituir a seleção é **um** undo
+- [ ] Digitar, Enter, Del e Backspace com seleção apagam o trecho primeiro
+- [ ] `Ctrl+C`, `Ctrl+X`, `Ctrl+V`, `Ctrl+A` no `KeyBindingRegistry`, escopo `Editor`
+- [ ] Clipboard na `MainWindow`, como o `IStorageProvider` dos diálogos — o `EditorViewModel`
+      continua sem um `using` do Avalonia
+
+### Fatia 4 — Marcação inline: negrito e itálico ⬜
+
+Fecha o item "Highlighting em tempo real reaproveitando os `InlineRun` do AST" da Fase 4 e cobra
+a promessa que o `LineBreaker` faz desde a Fatia 1 da Fase 3: *"o motor já está pronto para
+`**negrito**` no meio da frase"*.
+
+- [ ] `**` negrito, `*` itálico, `***` os dois; delimitador sem par sai como texto literal
+- [ ] `_` continua literal — uma regra em vez de duas, e `x_1` numa fórmula não vira itálico
+- [ ] A marcação sai com o **mesmo estilo** do texto que envolve: revelar muda a largura da
+      linha, nunca a altura. Mesma decisão do `## ` do heading
+- [ ] Nada muda fora do parser: `TextStyle` já tem `Weight` e `Italic`, o `LineBreaker` já quebra
+      sobre runs heterogêneos e já descarta os `IsMarkup`, e o `LayoutEngine` já revela por bloco
+
+---
+
+## Fase 6 — Documento acadêmico ⬜
 
 - [ ] Cabeçalho/rodapé (populando os campos reservados desde a Fase 3)
 - [ ] Numeração de página
@@ -770,6 +871,11 @@ Registrado desta fatia:
 Nada aqui está prometido; é estacionamento para não perder a ideia nem inflar as fases acima.
 
 - Justificação de texto Knuth-Plass (o MVP usa greedy word-wrap)
+- Seleção múltipla (`IReadOnlyList<SelectionRange>`) — veio da Fase 4. Multi-cursor é feature de
+  code editor; num editor de tese a lista plural custaria indireção em cada tecla, cada desenho e
+  cada edição por algo que talvez nunca venha
+- Chords reais registrados (ex: `Ctrl+K, Ctrl+S`) — veio da Fase 4. `KeyBindingRegistry` já
+  suporta N passos e tem teste; falta um comando que queira um chord, não máquina
 - Árvore balanceada na piece list (só se o profiling exigir)
 - Exportação DOCX
 - Normas configuráveis (ABNT/APA) como presets de `PageSettings`

@@ -7,7 +7,7 @@ namespace AcademicEditor.Core.Layout;
 /// </summary>
 /// <remarks>
 /// <see cref="HeaderReservedHeightPt"/> e <see cref="FooterReservedHeightPt"/> são 0 no MVP, mas
-/// existem desde já porque cabeçalho e rodapé (Fase 5) mudam a altura útil da página. Reservar
+/// existem desde já porque cabeçalho e rodapé (Fase 6) mudam a altura útil da página. Reservar
 /// o campo agora evita repaginar todo o motor depois.
 /// </remarks>
 public readonly record struct PageSettings(

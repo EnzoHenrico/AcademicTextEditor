@@ -28,7 +28,7 @@ namespace AcademicEditor.Core.Parsing;
 /// </remarks>
 public static class MarkupParser
 {
-    // Preset tipográfico do MVP. Na Fase 5 isto vira parte de um preset de norma (ABNT/APA)
+    // Preset tipográfico do MVP. Na Fase 6 isto vira parte de um preset de norma (ABNT/APA)
     // junto com PageSettings, em vez de constante no parser.
     private static readonly double[] HeadingSizesPt = [20.0, 17.0, 14.0, 12.0, 11.0, 11.0];
 

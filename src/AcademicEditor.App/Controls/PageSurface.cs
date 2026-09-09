@@ -25,6 +25,11 @@ public sealed class PageSurface : Control
     // macOS ~500, então qualquer um dos três passa por "normal" nas três plataformas.
     private static readonly TimeSpan BlinkInterval = TimeSpan.FromMilliseconds(530.0);
 
+    // Dois cursores construídos uma vez, não um por movimento do mouse: OnPointerMoved dispara
+    // dezenas de vezes por segundo, e cada Cursor novo é um recurso do sistema gráfico.
+    private static readonly Cursor TextCursor = new(StandardCursorType.Ibeam);
+    private static readonly Cursor ArrowCursor = new(StandardCursorType.Arrow);
+
     private readonly DispatcherTimer _blinkTimer;
 
     private EditorViewModel? _viewModel;
@@ -188,6 +193,60 @@ public sealed class PageSurface : Control
                 base.OnKeyDown(e);
                 break;
         }
+    }
+
+    // O clique é a segunda forma de mover o caret, ao lado das setas — e, como elas, o controle
+    // só traduz o evento numa chamada ao Core: decidir onde o caret pousa depende do documento
+    // paginado, e é lá que isso é testado.
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+
+        if (_viewModel is null || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            return;
+        }
+
+        // Clicar no texto tem de dar o foco de volta: sem isto, um clique depois de mexer na
+        // barra de rolagem punha o caret sem que a tecla seguinte chegasse aqui.
+        Focus();
+
+        if (PageRenderer.HitTest(_viewModel.Paginated, e.GetPosition(this), Bounds.Width) is { } hit)
+        {
+            _viewModel.PlaceCaretAt(hit.PageIndex, hit.XPt, hit.YPt);
+            e.Handled = true;
+        }
+    }
+
+    // Cursor por região: barra de texto sobre o papel, seta sobre a margem e sobre o vão entre
+    // folhas. Custa uma divisão e duas subtrações por movimento — nenhuma medição de texto — e dá
+    // ao autor uma leitura visual de onde a margem está.
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
+        Cursor = IsOverContent(e.GetPosition(this)) ? TextCursor : ArrowCursor;
+    }
+
+    /// <summary>O ponto está dentro da área de conteúdo de alguma folha?</summary>
+    /// <remarks>
+    /// Usa o resultado <b>cru</b> do <c>HitTest</c>, que não grampeia: é justamente o sinal fora do
+    /// intervalo que distingue o papel da margem. Grampear ali tornaria esta pergunta impossível
+    /// de responder sem refazer a conta.
+    /// </remarks>
+    private bool IsOverContent(Point dip)
+    {
+        if (_viewModel is null
+            || PageRenderer.HitTest(_viewModel.Paginated, dip, Bounds.Width) is not { } hit)
+        {
+            return false;
+        }
+
+        var settings = _viewModel.Paginated.Settings;
+
+        return hit.XPt >= 0.0
+            && hit.XPt <= settings.ContentWidthPt
+            && hit.YPt >= 0.0
+            && hit.YPt <= settings.ContentHeightPt;
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)

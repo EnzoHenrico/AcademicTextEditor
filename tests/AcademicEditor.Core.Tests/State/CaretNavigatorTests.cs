@@ -341,6 +341,133 @@ public sealed class CaretNavigatorTests
         Assert.Equal(6, CaretNavigator.MoveDown(caret, document, Measurer).Offset);
     }
 
+    // ------------------------------------------------------------------------------------------
+    // AtPoint — a entrada por clique.
+    // ------------------------------------------------------------------------------------------
+
+    [Fact]
+    public void Clique_pousa_na_fronteira_de_caractere_mais_proxima()
+    {
+        var document = Layout("abcdef");
+
+        // 10pt por caractere: 24pt está na metade esquerda do terceiro, 26pt na direita.
+        Assert.Equal(2, CaretNavigator.AtPoint(0, 24.0, 5.0, document, Measurer).Offset);
+        Assert.Equal(3, CaretNavigator.AtPoint(0, 26.0, 5.0, document, Measurer).Offset);
+    }
+
+    [Fact]
+    public void Clique_escolhe_a_linha_pela_altura()
+    {
+        var document = Layout("abc\ndef");
+
+        // Linha 0 ocupa 0..20pt, linha 1 ocupa 20..40pt.
+        Assert.Equal(1, CaretNavigator.AtPoint(0, 14.0, 5.0, document, Measurer).Offset);
+        Assert.Equal(5, CaretNavigator.AtPoint(0, 14.0, 25.0, document, Measurer).Offset);
+    }
+
+    // Uma tecla que não faz nada parece o editor travado; um clique que não faz nada parece o
+    // editor ignorando o mouse. Fora do texto, pousa no ponto mais próximo que existe.
+    [Fact]
+    public void Clique_fora_do_texto_pousa_no_extremo_mais_proximo()
+    {
+        var document = Layout("abc\ndef");
+
+        // Acima da primeira linha e à esquerda da margem: começo do documento.
+        Assert.Equal(0, CaretNavigator.AtPoint(0, -50.0, -50.0, document, Measurer).Offset);
+
+        // Abaixo da última linha e à direita da margem: fim do documento.
+        Assert.Equal(7, CaretNavigator.AtPoint(0, 500.0, 500.0, document, Measurer).Offset);
+    }
+
+    [Fact]
+    public void Clique_em_pagina_fora_do_intervalo_grampeia_na_pilha()
+    {
+        var document = Layout("abc");
+
+        Assert.Equal(0, CaretNavigator.AtPoint(-3, 0.0, 0.0, document, Measurer).Offset);
+        Assert.Equal(3, CaretNavigator.AtPoint(99, 500.0, 500.0, document, Measurer).Offset);
+    }
+
+    // O marcador é indivisível — a mesma regra que as setas seguem. Uma posição no meio do filete
+    // tracejado não descreve nada que o autor possa editar.
+    [Fact]
+    public void Clique_no_marcador_de_quebra_pousa_no_inicio_dele()
+    {
+        var document = Layout("abc\n\\page\ndef");
+        var marker = document.Pages[0].Lines.Single(line => line.Kind == LineKind.PageBreak);
+
+        var caret = CaretNavigator.AtPoint(0, 35.0, marker.YPt + 5.0, document, Measurer);
+
+        Assert.Equal(marker.SourceStart, caret.Offset);
+    }
+
+    // Folha sem linha alguma. O parser de hoje não produz uma — desde que o \\page passou a ocupar
+    // uma linha desenhada, toda folha tem ao menos o marcador —, mas CaretGeometry.PreviousLine e
+    // NextLine já a atravessam, e o clique tem de concordar com elas. Montada à mão pelo mesmo
+    // motivo: verificar a regra, não a rota que chega até ela.
+    [Fact]
+    public void Clique_em_folha_em_branco_cai_na_vizinha_com_conteudo()
+    {
+        var populated = Layout("abcdef");
+        var document = new PaginatedDocument(
+            [populated.Pages[0], new PageLayout([]), populated.Pages[0]],
+            Settings);
+
+        // Para trás primeiro: o caret pertence ao texto que a folha em branco veio depois de
+        // encerrar, não ao que ainda não começou.
+        // À direita de tudo, para que o offset identifique a linha sem ambiguidade: o fim dela.
+        var caret = CaretNavigator.AtPoint(1, 500.0, 0.0, document, Measurer);
+
+        Assert.Equal(populated.Pages[0].Lines[^1].SourceEnd, caret.Offset);
+    }
+
+    // A asserção que pega um sinal trocado na conversão: AtPoint é o inverso de Locate, e ir e
+    // voltar tem de devolver o mesmo offset em toda posição que uma linha cobre.
+    [Theory]
+    [InlineData("abc\ndef")]
+    [InlineData("aaaaa bbbbbbbbb")]
+    [InlineData("aaaa\nbbbb\ncccc\ndddd\neeee\nffff\ngggg")]
+    public void Clique_e_o_inverso_da_geometria_do_caret(string source)
+    {
+        var document = Layout(source);
+
+        foreach (var affinity in new[] { CaretAffinity.Downstream, CaretAffinity.Upstream })
+        {
+            for (var offset = 0; offset <= source.Length; offset++)
+            {
+                var position = CaretGeometry.Locate(offset, document, Measurer, affinity);
+                var line = document.Pages[position.PageIndex].Lines
+                    .First(candidate => candidate.YPt == position.YPt);
+
+                // Offsets que nenhuma linha cobre — o '\n' entre dois blocos — não têm posição na
+                // tela, e não é deles que o clique fala.
+                if (offset < line.SourceStart || offset > line.SourceEnd)
+                {
+                    continue;
+                }
+
+                var caret = CaretNavigator.AtPoint(
+                    position.PageIndex, position.XPt, position.YPt, document, Measurer);
+
+                Assert.Equal(offset, caret.Offset);
+            }
+        }
+    }
+
+    // Clicar no fim visual de uma linha quebrada pela margem tem de desenhar o caret ali, e não no
+    // começo da linha de baixo: os dois são o mesmo offset, e quem desempata é a afinidade.
+    [Fact]
+    public void Clique_no_fim_de_linha_quebrada_reivindica_a_linha_de_cima()
+    {
+        var document = Layout("aaaaa bbbbbbbbb");
+        var first = document.Pages[0].Lines[0];
+
+        var caret = CaretNavigator.AtPoint(0, first.SourceLength * 10.0, first.YPt + 5.0, document, Measurer);
+
+        Assert.Equal(first.SourceEnd, caret.Offset);
+        Assert.Equal(CaretAffinity.Upstream, caret.Affinity);
+    }
+
     private static string TextOf(LaidOutLine line) => string.Concat(line.Runs.Select(run => run.Text));
 
     private static PaginatedDocument LayoutOf(EditorDocument document) =>

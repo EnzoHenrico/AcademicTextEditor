@@ -263,6 +263,10 @@ public sealed class EditorViewModel
 
     public void MoveCaretPageDown() => Navigate(CaretNavigator.MovePageDown(_caret, Paginated, _measurer));
 
+    /// <summary>Põe o caret onde o autor clicou, em coordenadas da área de conteúdo da folha.</summary>
+    public void PlaceCaretAt(int pageIndex, double xPt, double yPt) =>
+        Navigate(CaretNavigator.AtPoint(pageIndex, xPt, yPt, Paginated, _measurer));
+
     public bool CanUndo => _undo.CanUndo;
 
     public bool CanRedo => _undo.CanRedo;
