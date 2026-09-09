@@ -91,6 +91,11 @@ num exportador PDF/CLI depois. A única costura Core↔App é a interface `IText
   branco. Quem conta é `LineBreaks.ForEnter`, no Core, porque só o layout sabe onde a margem
   quebrou. Corolário: **a afinidade sobrevive à edição** — sem ela o caret volta sempre para o
   começo da linha de baixo e a tecla parece não ter feito nada.
+- **Medição de texto é cacheada por `(texto, estilo)`**, no `CachingTextMeasurer` do Core — não
+  dentro do medidor Avalonia, para a política ficar testável sem subsistema gráfico e para um
+  exportador PDF herdá-la. Medido: numa repaginação de 301 páginas sem cache, 98,1% do tempo está
+  dentro do `ITextMeasurer` e 96,7% das medições são repetição; o cache derruba a tecla de 910ms
+  para 68ms. Só a largura — as métricas de linha dependem só do estilo e não têm como crescer.
 - **Marcação de bloco é revelada na linha do caret** (`# ` num título), como Obsidian e Typora.
   Sem isso existiriam posições no arquivo sem posição na tela, e o Enter no início de um título
   tirava a formatação do texto. A marcação sai com o mesmo estilo do bloco: revelar muda a largura

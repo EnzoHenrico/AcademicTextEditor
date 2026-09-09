@@ -521,23 +521,27 @@ linha. **Os totais não se subtraem; o que se compara é o custo por linha.**
 
 | | algoritmo (`FakeTextMeasurer`) | real (`AvaloniaTextMeasurer`) |
 |---|---|---|
-| caracteres do corpus | 409.529 | 1.215.789 |
-| páginas | 314 | 352 |
-| linhas | 10.668 | 19.001 |
-| tempo de uma repaginação | 33 ms | **1.304 ms** |
-| **por linha** | **3,11 µs** | **68,63 µs** |
+| caracteres do corpus | 409.529 | 1.017.245 |
+| páginas | 314 | 301 |
+| linhas | 10.668 | 16.056 |
+| tempo de uma repaginação | 33 ms | **910 ms** |
+| **por linha** | **3,11 µs** | **56,66 µs** |
 
 `LayoutPerformanceTests` mede a primeira coluna e guarda um teto de 3s contra regressão de ordem
 de grandeza; `--measure-layout` no App mede a segunda, com o medidor instrumentado.
 
-**O motor não é o gargalo — a medição de texto é.** 68,63 ÷ 3,11 ≈ **22**: medir texto de verdade
-custa vinte e duas vezes o que custa todo o resto do motor junto. A passada instrumentada confirma
-pelo outro lado — **1,27s dos 1,3s (97,5%) estão dentro do `ITextMeasurer`**, em 416.739 chamadas a
+*(Os números da segunda coluna foram refeitos quando o corpus do benchmark ganhou vocabulário
+realista e títulos, na fatia do cache — ver Fase 4. A conclusão não mudou; os números do commit
+original são os do corpus de dezoito palavras.)*
+
+**O motor não é o gargalo — a medição de texto é.** 56,66 ÷ 3,11 ≈ **18**: medir texto de verdade
+custa dezoito vezes o que custa todo o resto do motor junto. A passada instrumentada confirma pelo
+outro lado — **893ms dos 910ms (98,1%) estão dentro do `ITextMeasurer`**, em 258.002 chamadas a
 `MeasureWidthPt`, cada uma construindo um `TextLayout` e alocando uma string, porque o line breaker
-mede chunk a chunk (~22 por linha). As outras 380.001 chamadas são `GetLineMetrics`, que o cache
+mede chunk a chunk (~16 por linha). As outras 243.217 chamadas são `GetLineMetrics`, que o cache
 por estilo já resolve: são buscas em dicionário e não pesam.
 
-Na prática: **digitar num documento de 352 páginas deixa a tela 1,3s atrás do buffer.** A janela
+Na prática: **digitar num documento de 301 páginas deixa a tela 0,9s atrás do buffer.** A janela
 não trava, porque o layout roda em background e é cancelável — mas cada tecla cancela a
 repaginação pendente, então a tela só alcança o texto quando o autor para de digitar.
 
@@ -557,14 +561,59 @@ Decisão que sai daí:
 
 ---
 
-## Fase 4 — Editor de verdade ⬜
+## Fase 4 — Editor de verdade 🔨
 
+- [x] **Cache de medição de texto** por `(texto, estilo)` — não estava nesta lista, entrou na
+      frente porque a medição da Fatia 6 mostrou que era ele, e não o reflow, o primeiro gargalo
 - [ ] Reflow incremental (dirty-range em 3 níveis: parser → line-breaker → page-breaker)
 - [ ] Highlighting em tempo real reaproveitando os `InlineRun` do AST (sem motor separado)
 - [ ] Seleção múltipla (`IReadOnlyList<SelectionRange>`)
 - [ ] Geometria exata do caret via `LaidOutLine.SourceStart` ↔ `TextLayout`
 - [ ] Chords reais registrados (ex: `Ctrl+K, Ctrl+S`)
 - [ ] Culling de páginas fora do viewport no `Render`
+
+### Cache de medição ✅
+
+`CachingTextMeasurer` no Core, decorando o `AvaloniaTextMeasurer`. Decorador, e não um dicionário
+dentro da implementação Avalonia, por dois motivos: a política de cache fica testável sem
+subsistema gráfico — que é a razão de `ITextMeasurer` existir — e um exportador PDF a herda junto
+com o motor de layout.
+
+Medido com `--measure-layout`, no documento de 301 páginas e 16.056 linhas da Fatia 6:
+
+| | tempo | ganho |
+|---|---|---|
+| sem cache | 909,7 ms | — |
+| cache frio (abrir o arquivo) | 308,7 ms | **2,9x** |
+| cache quente (uma tecla) | 68,1 ms | **13,4x** |
+
+- [x] O corpus do benchmark foi refeito **antes** de medir qualquer coisa. Com as dezoito palavras
+      que ele tinha, o cache acertaria quase 100% e estaria medindo a si mesmo. Agora são 12 mil
+      formas distintas sorteadas por Zipf, montadas por sílabas — o arquivo dá para abrir e ler —,
+      com um título a cada oito parágrafos. A repetição observada, **96,7%** (8.423 trechos
+      distintos em 258.002 medições), é a da língua, não a do gerador
+- [x] O acerto **não aloca**: `GetAlternateLookup<ReadOnlySpan<char>>` compara o span com as chaves
+      sem materializar string. Metade do ganho é essa; a outra metade é não construir o `TextLayout`
+- [x] Teto de 32.768 trechos por estilo, e ao estourar limpa em vez de despejar. O conjunto de
+      trabalho é o vocabulário do documento — menos de dez mil numa tese —, e o que passa disso são
+      os prefixos transitórios da busca binária que posiciona o caret. Um LRU custaria mais em
+      contabilidade do que economizaria num cache que quase nunca chega ao teto
+- [x] Só a largura é cacheada aqui. As métricas de linha dependem apenas do estilo, são meia dúzia
+      de entradas e já eram cacheadas por quem as produz
+- [x] Oito testes no Core, com um medidor que conta as chamadas que chegam embaixo: repetição não
+      desce, estilos não se confundem, a largura é idêntica à de quem não tem cache, e estourar o
+      teto volta a medir em vez de devolver número errado
+
+Registrado desta fatia:
+
+- **Os 68ms que sobram são o piso do rebuild completo**, não medição: 16.056 linhas a ~3,11 µs é
+  ~50ms, e o resto são as buscas no cache. A medição de texto deixou de ser o gargalo — quem é,
+  agora, é reconstruir o documento inteiro a cada tecla. **É a vez do reflow incremental**
+- **68ms por tecla cabe no teto de latência de 120ms** do `EditorViewModel`, então digitar num
+  documento de 300 páginas passa a acompanhar. O que ainda não cabe é o custo em lixo: cada tecla
+  ainda aloca a string do documento inteiro, a AST inteira e as linhas todas
+- **Abrir o arquivo continua custando 309ms** e sempre vai custar uma paginação completa — é o
+  único caminho que o reflow incremental não ajuda, e por isso o cache tinha de vir primeiro
 
 ---
 

@@ -30,8 +30,10 @@ public partial class MainWindow : Window
         // De propósito a variante CRLF, que é o caso difícil: o EditorDocument normaliza na
         // entrada, então trocar por UniqueFeaturesLf tem de dar exatamente a mesma tela. Se um dia
         // não der, a regressão aparece já na primeira execução em vez de esperar um teste.
+        // O medidor real por baixo, o cache por cima. Medido na Fatia 6: sem ele, 97,9% de uma
+        // repaginação de 300 páginas é medição de texto, e 96% dessas medições são repetição.
         _viewModel = new EditorViewModel(
-            new AvaloniaTextMeasurer(),
+            new CachingTextMeasurer(new AvaloniaTextMeasurer()),
             PageSettings.A4,
             Assets.Samples.Text.UniqueFeaturesCrLf);
 
