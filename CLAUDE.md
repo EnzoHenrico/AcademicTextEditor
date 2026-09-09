@@ -61,6 +61,10 @@ num exportador PDF/CLI depois. A única costura Core↔App é a interface `IText
 - **Layout roda em background** (`Task.Run`) e publica via `Dispatcher.UIThread.Post`.
   `PaginatedDocument` e filhos são imutáveis: troca de referência atômica, sem locks.
 - **`Render(DrawingContext)` só desenha** — nunca faz I/O nem recalcula layout.
+- **`Render` desenha só as folhas que o viewport cruza**, e o intervalo sai por aritmética sobre o
+  passo da pilha, não por varredura. Sem isso, um documento de 301 páginas custava 249ms por quadro
+  na UI thread — e o timer do caret pagava isso duas vezes por segundo com o app parado. Corolário:
+  **rolar tem de invalidar o desenho**, porque o Avalonia só translada o que já foi desenhado.
 - **Texto digitado vem do evento `TextInput`**, não de `KeyDown.Key` (IME e layouts internacionais).
 - **Save é atômico**: escreve em `.tmp` no mesmo diretório e faz `File.Move(..., overwrite: true)`.
 - **`LaidOutLine` é lista de `LaidOutRun` desde o MVP**, mesmo com o parser emitindo um run

@@ -21,6 +21,13 @@ class Program
             return;
         }
 
+        if (args.Contains("--measure-render"))
+        {
+            BuildAvaloniaApp().SetupWithoutStarting();
+            Diagnostics.LayoutBenchmark.RunRender(Console.Out);
+            return;
+        }
+
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

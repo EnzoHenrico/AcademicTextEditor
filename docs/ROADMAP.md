@@ -570,7 +570,52 @@ Decisão que sai daí:
 - [ ] Seleção múltipla (`IReadOnlyList<SelectionRange>`)
 - [ ] Geometria exata do caret via `LaidOutLine.SourceStart` ↔ `TextLayout`
 - [ ] Chords reais registrados (ex: `Ctrl+K, Ctrl+S`)
-- [ ] Culling de páginas fora do viewport no `Render`
+- [x] **Culling de páginas fora do viewport no `Render`** — subiu na fila pelo mesmo motivo do
+      cache: a medição apontou para ele
+
+### Culling do desenho ✅
+
+Aberta depois de abrir o documento de 301 páginas no app e ele ficar "consistentemente lento, como
+se o processador estivesse sempre atrás de uma fila, independente da operação". Não era a
+paginação — aquela já estava em 68ms e roda em background. Era o **desenho**.
+
+`PageRenderer.Render` percorria a pilha inteira e construía um `TextLayout` por linha: **16.056 por
+quadro, na UI thread**. E o quadro não era raro — `InvalidateVisual` vem do timer de piscar do
+caret, **a cada 530ms, para sempre**.
+
+Medido com `--measure-render`, desenhando num `RenderTargetBitmap` de 900×700 com o
+`DrawingContext` de verdade:
+
+| | ms por quadro |
+|---|---|
+| pilha inteira | 248,9 |
+| só o que o viewport cruza | **1,89** — **131x** |
+
+- [x] **Parado, o app queimava metade de um núcleo**: 498 ms de desenho por segundo de relógio, sem
+      ninguém tocar no teclado. Passou a 3,8 ms/s. É o número que explica o sintoma — a lentidão era
+      constante e independente da operação porque não dependia de operação nenhuma
+- [x] Digitando, os 249ms eram na **UI thread**, somados por cima da repaginação em background. Era
+      a fila
+- [x] O intervalo de folhas sai por **aritmética**, não varredura: a pilha é uniforme, então o
+      índice é uma divisão pelo passo (altura da folha mais o vão). Varrer as páginas para saber
+      quais entram custaria O(páginas) por quadro — o que o culling existe para não pagar
+- [x] **Rolar não chama `Render` por conta própria** — o Avalonia translada o que já foi desenhado.
+      Isso era invisível enquanto o desenho cobria tudo; com culling, seria folha em branco atrás da
+      rolagem. O `PageSurface` assina `ScrollViewer.OffsetProperty` e invalida, e solta a inscrição
+      no detach, como já fazia com o ViewModel e o timer
+- [x] `viewport: null` desenha a pilha inteira: é o que a medição usa para o "antes" e o que mantém
+      o `Render` utilizável fora de um `ScrollViewer` — um exportador PDF, por exemplo
+
+Registrado desta fatia:
+
+- **A conta de páginas visíveis não tem teste unitário.** `PageRenderer` vive no App e depende de
+  `Rect` do Avalonia; levá-la ao Core exigiria um tipo de geometria próprio só para isso. A
+  verificação é o benchmark mais a rolagem manual, e as bordas do intervalo — primeira e última
+  folha — são o que olhar
+- **Glyph runs cacheados continuam fora.** Com ~3 folhas por quadro em vez de 301, cachear seria
+  otimizar o que deixou de doer. Entra se a medição voltar a apontar para cá
+- **O caret ainda repinta a superfície inteira a cada 530ms.** Agora custa 1,89ms, então não vale
+  máquina para repintar só o retângulo dele
 
 ### Cache de medição ✅
 

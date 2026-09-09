@@ -3,6 +3,9 @@ using System.Text;
 
 using AcademicEditor.App.Rendering;
 
+using Avalonia;
+using Avalonia.Media.Imaging;
+
 using AcademicEditor.Core.Layout;
 using AcademicEditor.Core.Layout.Model;
 using AcademicEditor.Core.Parsing;
@@ -105,6 +108,78 @@ public static class LayoutBenchmark
         output.WriteLine($"  repetidas         : {1.0 - ((double)counting.DistinctWidths / counting.WidthCalls):P1} (teto do cache)");
         output.WriteLine($"medições métricas   : {counting.MetricsCalls:N0}");
         output.WriteLine($"tempo no medidor    : {counting.ElapsedMilliseconds:N1} ms (instrumentado, sem cache)");
+    }
+
+    /// <summary>
+    /// Quanto custa <b>um quadro</b> — desenhar, não paginar.
+    /// </summary>
+    /// <remarks>
+    /// A outra metade da conta, e a que o autor sente parado: <c>InvalidateVisual</c> vem do timer
+    /// de piscar do caret a cada 530ms, então o custo de um quadro é pago duas vezes por segundo
+    /// mesmo sem ninguém tocar no teclado. Desenha num <c>RenderTargetBitmap</c> do tamanho de uma
+    /// janela, com o <c>DrawingContext</c> de verdade — não um simulacro.
+    /// </remarks>
+    public static void RunRender(TextWriter output)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+
+        const int WidthDip = 900;
+        const int HeightDip = 700;
+        const int Frames = 10;
+
+        var paginated = Paginate(
+            BuildDocument(Paragraphs, WordsPerParagraph),
+            new CachingTextMeasurer(new AvaloniaTextMeasurer()));
+
+        using var target = new RenderTargetBitmap(new PixelSize(WidthDip, HeightDip), new Vector(96.0, 96.0));
+
+        // Meio do documento, não o começo: é onde a aritmética dos índices tem de estar certa, e
+        // onde o "antes" e o "depois" desenham a mesma coisa na tela por caminhos diferentes.
+        var pageStepDip = (paginated.Settings.HeightPt * PageRenderer.PtToDip) + PageRenderer.PageGapDip;
+        var middle = new Rect(0.0, pageStepDip * (paginated.Pages.Count / 2), WidthDip, HeightDip);
+
+        DrawFrame(target, paginated, WidthDip, viewport: null);
+
+        var whole = TimeFrames(target, paginated, WidthDip, viewport: null, Frames);
+        var visible = TimeFrames(target, paginated, WidthDip, middle, Frames);
+
+        output.WriteLine($"páginas             : {paginated.Pages.Count:N0}");
+        output.WriteLine($"linhas              : {paginated.Pages.Sum(page => page.Lines.Count):N0}");
+        output.WriteLine(string.Empty);
+        output.WriteLine($"pilha inteira       : {whole:N1} ms/quadro");
+        output.WriteLine($"só o visível        : {visible:N2} ms/quadro   ({whole / visible:N0}x)");
+        output.WriteLine(string.Empty);
+        output.WriteLine($"parado, a 530ms     : {whole * 2.0:N0} ms/s antes, {visible * 2.0:N1} ms/s depois");
+    }
+
+    private static double TimeFrames(
+        RenderTargetBitmap target,
+        PaginatedDocument paginated,
+        double widthDip,
+        Rect? viewport,
+        int frames)
+    {
+        var stopwatch = Stopwatch.StartNew();
+
+        for (var frame = 0; frame < frames; frame++)
+        {
+            DrawFrame(target, paginated, widthDip, viewport);
+        }
+
+        stopwatch.Stop();
+
+        return stopwatch.Elapsed.TotalMilliseconds / frames;
+    }
+
+    private static void DrawFrame(
+        RenderTargetBitmap target,
+        PaginatedDocument paginated,
+        double widthDip,
+        Rect? viewport)
+    {
+        using var context = target.CreateDrawingContext();
+
+        PageRenderer.Render(context, paginated, widthDip, caret: null, viewport);
     }
 
     private static double TimeOnly(Action work)

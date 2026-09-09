@@ -80,18 +80,25 @@ public static class PageRenderer
             caret.HeightPt * PtToDip);
     }
 
+    /// <param name="viewport">
+    /// Retângulo visível, nas coordenadas da superfície. Só as folhas que ele cruza são
+    /// desenhadas. <c>null</c> desenha a pilha inteira — é o que uma medição ou um exportador
+    /// querem, e é o comportamento de quem não vive dentro de um <c>ScrollViewer</c>.
+    /// </param>
     public static void Render(
         DrawingContext context,
         PaginatedDocument document,
         double surfaceWidthDip,
-        CaretPosition? caret = null)
+        CaretPosition? caret = null,
+        Rect? viewport = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(document);
 
         var settings = document.Settings;
+        var (first, last) = VisiblePages(document, viewport);
 
-        for (var index = 0; index < document.Pages.Count; index++)
+        for (var index = first; index <= last; index++)
         {
             RenderPage(context, document.Pages[index], settings, PageOrigin(settings, index, surfaceWidthDip));
         }
@@ -100,6 +107,28 @@ public static class PageRenderer
         {
             context.FillRectangle(CaretBrush, rect);
         }
+    }
+
+    /// <summary>Intervalo de folhas que o retângulo visível cruza, inclusive nas duas pontas.</summary>
+    /// <remarks>
+    /// Aritmética, não varredura: a pilha é uniforme, então o índice sai de uma divisão pelo passo
+    /// — altura da folha mais o vão. Percorrer as páginas para descobrir quais entram custaria
+    /// O(páginas) por quadro, que é justamente o que o culling existe para não pagar.
+    /// </remarks>
+    private static (int First, int Last) VisiblePages(PaginatedDocument document, Rect? viewport)
+    {
+        var last = document.Pages.Count - 1;
+
+        if (viewport is not { } visible || visible.Height <= 0.0)
+        {
+            return (0, last);
+        }
+
+        var stepDip = (document.Settings.HeightPt * PtToDip) + PageGapDip;
+
+        return (
+            Math.Clamp((int)((visible.Top - PageGapDip) / stepDip), 0, last),
+            Math.Clamp((int)((visible.Bottom - PageGapDip) / stepDip), 0, last));
     }
 
     /// <summary>Canto superior esquerdo de uma folha na pilha.</summary>
@@ -139,9 +168,11 @@ public static class PageRenderer
 
             foreach (var run in line.Runs)
             {
-                // Um TextLayout por run a cada frame é caro e será substituído por glyph runs
-                // cacheados quando a rolagem tiver volume de verdade (culling é Fase 4). Aqui o
-                // que importa é que Render apenas desenha: nada de I/O, nada de recalcular layout.
+                // Um TextLayout por run a cada quadro é caro, e é por isso que o culling acima
+                // existe: com ele são as ~3 folhas visíveis, não as 301 do documento. Cachear os
+                // glyph runs em cima disso é otimizar o que deixou de doer — entra se a medição
+                // voltar a apontar para cá. Aqui o que importa é que Render apenas desenha: nada
+                // de I/O, nada de recalcular layout.
                 using var text = new TextLayout(
                     run.Text,
                     AvaloniaTextMeasurer.ToTypeface(run.Style),
