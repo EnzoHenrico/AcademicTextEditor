@@ -219,6 +219,37 @@ public static class PageRenderer
             PageGapDip + (pageIndex * (pageHeightDip + PageGapDip)));
     }
 
+    /// <summary>
+    /// Desenha uma faixa de cabeçalho ou rodapé.
+    /// </summary>
+    /// <remarks>
+    /// As duas coordenadas do <see cref="BandRun"/> têm origens diferentes de propósito, e a conta
+    /// aqui é o espelho disso: <c>XPt</c> parte da área de conteúdo, porque é o alinhamento com o
+    /// bloco de texto que faz a faixa parecer parte da folha; <c>BaselinePt</c> parte do topo do
+    /// papel, porque a faixa vive fora da área de conteúdo e um Y relativo a ela seria negativo.
+    /// </remarks>
+    private static void DrawBand(
+        DrawingContext context,
+        IReadOnlyList<BandRun> runs,
+        Point origin,
+        double contentLeftDip)
+    {
+        foreach (var run in runs)
+        {
+            using var text = new TextLayout(
+                run.Text,
+                AvaloniaTextMeasurer.ToTypeface(run.Style),
+                run.Style.FontSizePt * PtToDip,
+                TextBrush);
+
+            text.Draw(
+                context,
+                new Point(
+                    contentLeftDip + (run.XPt * PtToDip),
+                    origin.Y + (run.BaselinePt * PtToDip) - text.Baseline));
+        }
+    }
+
     private static void RenderPage(
         DrawingContext context,
         PageLayout page,
@@ -233,6 +264,11 @@ public static class PageRenderer
 
         var contentLeftDip = origin.X + (settings.ContentLeftPt * PtToDip);
         var contentTopDip = origin.Y + (settings.ContentTopPt * PtToDip);
+
+        // Cabeçalho e rodapé vêm de campos próprios, nunca de page.Lines: eles não têm offset no
+        // buffer, e o caret varre aquela lista. Ver PageLayout e BandRun.
+        DrawBand(context, page.Header, origin, contentLeftDip);
+        DrawBand(context, page.Footer, origin, contentLeftDip);
 
         // Depois do papel e antes do texto: é a ordem que faz o destaque marcar o texto em vez de
         // apagá-lo.

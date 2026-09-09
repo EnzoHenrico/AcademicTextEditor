@@ -42,12 +42,36 @@ public sealed class PageRendererTests
     [InlineData(2, 42.0, 17.5)]
     public void HitTest_devolve_o_ponto_de_onde_CaretRectDip_desenhou(int pageIndex, double xPt, double yPt)
     {
+        AssertRoundTrip(Document, pageIndex, xPt, yPt);
+    }
+
+    /// <remarks>
+    /// A faixa de cabeçalho empurra a área de conteúdo para baixo, e as duas contas leem isso do
+    /// mesmo <c>ContentTopPt</c>. Se uma delas passasse a somar a reserva por fora, o caret
+    /// pousaria uma faixa acima de onde o clique caiu — e é esta a configuração que o aplicativo
+    /// usa desde que o cabeçalho existe.
+    /// </remarks>
+    [Theory]
+    [InlineData(0, 0.0, 0.0)]
+    [InlineData(1, 88.0, 250.5)]
+    public void O_ida_e_volta_sobrevive_a_faixa_reservada(int pageIndex, double xPt, double yPt)
+    {
+        var withHeader = Document with
+        {
+            Settings = PageSettings.A4 with { HeaderReservedHeightPt = 24.0, FooterReservedHeightPt = 18.0 },
+        };
+
+        AssertRoundTrip(withHeader, pageIndex, xPt, yPt);
+    }
+
+    private static void AssertRoundTrip(PaginatedDocument document, int pageIndex, double xPt, double yPt)
+    {
         var caret = new CaretPosition(pageIndex, xPt, yPt, HeightPt: 12.0);
-        var rect = PageRenderer.CaretRectDip(Document, caret, SurfaceWidthDip);
+        var rect = PageRenderer.CaretRectDip(document, caret, SurfaceWidthDip);
 
         Assert.NotNull(rect);
 
-        var hit = PageRenderer.HitTest(Document, rect.Value.TopLeft, SurfaceWidthDip);
+        var hit = PageRenderer.HitTest(document, rect.Value.TopLeft, SurfaceWidthDip);
 
         Assert.NotNull(hit);
         Assert.Equal(pageIndex, hit.Value.PageIndex);

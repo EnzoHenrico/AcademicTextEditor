@@ -1,3 +1,5 @@
+using System.Globalization;
+
 using AcademicEditor.App.Input;
 using AcademicEditor.App.Rendering;
 using AcademicEditor.App.ViewModels;
@@ -17,6 +19,18 @@ public partial class MainWindow : Window
     {
         Patterns = ["*.md", "*.markdown", "*.txt"],
     };
+
+    // O programa é todo em português; formatar "1,234 palavras" no meio dele estaria errado, e
+    // depender da cultura da máquina faria o mesmo texto sair diferente em cada uma delas.
+    private static readonly CultureInfo Numbers = CultureInfo.GetCultureInfo("pt-BR");
+
+    // A4 com uma faixa reservada no alto para o cabeçalho. 24pt ≈ 8,5mm: cabe a linha do número da
+    // página — corpo 12 mede cerca de 14pt de altura — com folga até a primeira linha do texto.
+    //
+    // A reserva mora aqui, junto do que vai ser escrito nela, porque as duas decisões são uma só:
+    // sem reserva o PageBands não desenha nada, e reserva sem texto é papel em branco. A geometria
+    // continua tendo um dono só, que é o PageSettings.
+    private static readonly PageSettings Page = PageSettings.A4 with { HeaderReservedHeightPt = 24.0 };
 
     private readonly EditorViewModel _viewModel;
     private readonly ShortcutDispatcher _shortcuts;
@@ -43,9 +57,10 @@ public partial class MainWindow : Window
         // repaginação de 300 páginas é medição de texto, e 96% dessas medições são repetição.
         _viewModel = new EditorViewModel(
             new CachingTextMeasurer(new AvaloniaTextMeasurer()),
-            PageSettings.A4,
+            Page,
             Assets.Samples.Text.UniqueFeaturesCrLf,
-            typography: TypographyPreset.Abnt);
+            typography: TypographyPreset.Abnt,
+            bands: HeaderFooterSettings.Abnt);
 
         Surface.ViewModel = _viewModel;
         _viewModel.DocumentStateChanged += (_, _) => UpdateDocumentState();
@@ -226,6 +241,27 @@ public partial class MainWindow : Window
     /// seguinte chega, ou fica pendurada depois de deixar de valer. Um save que falha é a falha que
     /// mais importa neste programa, e o lugar dela é a barra.
     /// </remarks>
+    /// <summary>
+    /// As contagens da barra: o documento inteiro, ou o trecho selecionado quando há um.
+    /// </summary>
+    /// <remarks>
+    /// Trocar para o trecho, em vez de mostrar os dois números, é o que todo editor faz — e é o que
+    /// responde à pergunta que se faz com texto selecionado, que é "quanto tem <i>isto</i>".
+    /// </remarks>
+    private string FormatCounts()
+    {
+        var counts = _viewModel.SelectionStatistics ?? _viewModel.Statistics;
+        var prefix = _viewModel.SelectionStatistics is null ? string.Empty : "seleção: ";
+
+        return prefix
+            + Plural(counts.Words, "palavra", "palavras")
+            + " · "
+            + Plural(counts.Characters, "caractere", "caracteres");
+    }
+
+    private static string Plural(int count, string singular, string plural) =>
+        $"{count.ToString("N0", Numbers)} {(count == 1 ? singular : plural)}";
+
     private void UpdateDocumentState()
     {
         var name = _viewModel.FilePath is { } path ? Path.GetFileName(path) : "documento sem título";
@@ -234,6 +270,7 @@ public partial class MainWindow : Window
         Title = $"{name}{modified}  —  AcademicEditor";
 
         StatusText.Text = _viewModel.StatusMessage;
+        StatusCounts.Text = FormatCounts();
 
         // O caminho inteiro, e não só o nome: o título já dá o nome, e o que falta saber quando o
         // mesmo nome existe em duas pastas é de qual delas este veio.

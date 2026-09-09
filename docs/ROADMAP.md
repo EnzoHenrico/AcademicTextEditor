@@ -1029,18 +1029,18 @@ Registrado desta fatia:
 - **Não houve conferência visual.** A máquina não tem ferramenta de captura de tela; o app foi
   aberto e ficou de pé, e o resto está coberto por teste. A tela em si é para olhar no `./dev.sh run`
 
-### Fatia 2 — Cabeçalho, rodapé e contagem ⬜
+### Fatia 2 — Cabeçalho, rodapé e contagem ✅
 
-- [ ] `HeaderFooterSettings` no Core: três campos (esquerda, centro, direita) para o cabeçalho e
-      três para o rodapé, com os marcadores `{page}`, `{pages}` e `{title}`. É o que finalmente
-      preenche `HeaderReservedHeightPt`/`FooterReservedHeightPt`, zerados no `PageSettings` desde a
-      Fase 3 justamente à espera disto
-- [ ] Numeração de página — é o `{page}`, e não um item à parte: numerar é o caso mais simples do
-      mesmo template. Padrão ABNT: canto superior direito
-- [ ] Contador de caracteres e palavras na barra de status da janela (a da Fatia 1 — não confundir
+- [x] `HeaderFooterSettings` no Core: três campos (esquerda, centro, direita) para o cabeçalho e
+      três para o rodapé, com os marcadores `{page}`, `{pages}` e `{title}`. Carrega **só o texto**
+      — a altura continua sendo de `HeaderReservedHeightPt`/`FooterReservedHeightPt`, zerados no
+      `PageSettings` desde a Fase 3 justamente à espera disto
+- [x] Numeração de página — é o `{page}`, e não um item à parte: numerar é o caso mais simples do
+      mesmo template. `HeaderFooterSettings.Abnt` põe o número no canto superior direito
+- [x] Contador de caracteres e palavras na barra de status da janela (a da Fatia 1 — não confundir
       com o rodapé da página, que é o item acima)
 
-**Cabeçalho e rodapé NÃO entram em `PageLayout.Lines`; `PageLayout` ganha campos próprios.**
+**Cabeçalho e rodapé NÃO entram em `PageLayout.Lines`; `PageLayout` ganhou campos próprios.**
 `CaretGeometry.FindLine` varre exatamente essa lista mapeando offset → linha, e `LayoutEngine.Reuse`
 exige que ela case um-para-um com os blocos e seja consumida até o fim. Uma linha de cabeçalho não
 tem offset no buffer: ela capturaria o caret e derrubaria o reflow incremental — e, como toda falha
@@ -1053,10 +1053,39 @@ texto, sem repaginar nada.
 
 **A contagem roda no `Task.Run` da paginação**, não na UI thread. Contar é O(n) e o documento de
 referência tem ~1MB — mas aquele `Task.Run` já materializa a fonte inteira para paginar, então
-contar ali custa a passada e nada mais, e já sai coalescida pelo mesmo laço. Decidido junto: conta
-sobre o buffer cru, marcação inclusa (é o simples e o previsível); por **code point**, não por
-unidade UTF-16, senão um emoji conta dois; e com um trecho selecionado a barra mostra o trecho,
-como todo editor faz.
+contar ali custa a passada e nada mais, e já sai coalescida pelo mesmo laço. Conta sobre o buffer
+cru, marcação inclusa (é o simples e o previsível); por **code point**, não por unidade UTF-16,
+senão um emoji conta dois; e com um trecho selecionado a barra mostra o trecho, como todo editor
+faz.
+
+Registrado desta fatia:
+
+- **As faixas viraram um passe sobre o resultado, não um parâmetro do motor.** O plano era o
+  `HeaderFooterSettings` chegar ao `LayoutEngine`; escrevendo, ficou claro que a faixa **não
+  influencia quebra de linha nem de página** — a reserva é fixa e decidida antes de qualquer linha
+  ser quebrada. Então `PageBands.Apply(documento, faixas, medidor)` é um passe puro sobre o
+  documento pronto, e três coisas caem no colo: é literalmente o "segundo passe" que o `{pages}`
+  pedia, o `LayoutEngine.Layout` não vai para oito parâmetros, e o caminho incremental herda as
+  faixas de graça porque quem as aplica é quem publica o layout
+- **`BandRun` não tem `SourceStart`, e é para isso que o tipo existe.** É a forma forte da decisão
+  acima: não basta a faixa morar fora de `Lines`, ela não pode nem **carregar** um offset. Um
+  `LaidOutRun` com offset falso mais cedo ou mais tarde seria consumido como conteúdo, e uma falha
+  de offset não quebra o desenho — quebra o caret
+- **A reserva tem um dono só, e a regra é "sem reserva não há faixa".** Duas fontes de verdade para
+  a mesma altura seria uma para divergir da outra. Se houver texto configurado e reserva zero, nada
+  é desenhado — a alternativa seria o cabeçalho por cima da primeira linha do texto. Tem teste
+- **A contagem da seleção não aloca.** Ela sai do **texto publicado**, com `AsSpan` — pedir o trecho
+  ao buffer seria ~2MB direto no Large Object Heap num `Ctrl+A` da tese, e isso a cada movimento do
+  ponteiro durante um arrasto. Custo aceito: fica até um layout atrás do buffer, que é o mesmo
+  atraso que a tela inteira já tem e é invisível num contador
+- **"Palavra" aqui não é a palavra do `WordBoundaries`.** Aquela responde "o que o duplo clique
+  seleciona", e ali uma vírgula é uma unidade própria; esta responde "quantas palavras o autor
+  escreveu", e ali `Silva,` é uma palavra — que é o que qualquer contador faz. As duas definições
+  convivem porque as perguntas são diferentes, e cada uma diz isso no seu comentário
+- **Gap encontrado, e não corrigido de propósito: `PageSettings.A4` usa margens de 1" uniformes, e
+  a ABNT quer 3cm à esquerda e no topo, 2cm à direita e embaixo.** É o irmão geométrico do que a
+  Fatia 1 corrigiu na tipografia, mas mudar margem move **toda** quebra de página do documento —
+  decisão própria, não item de outra fatia. Fica devido, ao lado da medição do preset da ABNT
 
 ### Fatia 3 — Exportação PDF ⬜
 
