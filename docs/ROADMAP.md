@@ -659,6 +659,8 @@ Registrado desta fatia:
   ainda aloca a string do documento inteiro, a AST inteira e as linhas todas
 - **Abrir o arquivo continua custando 309ms** e sempre vai custar uma paginação completa — é o
   único caminho que o reflow incremental não ajuda, e por isso o cache tinha de vir primeiro
+- **`--write-corpus <caminho>` grava esse documento em disco** e o App passou a aceitar um arquivo
+  na linha de comando, que é como se sente a latência em vez de só ler o número
 
 ---
 

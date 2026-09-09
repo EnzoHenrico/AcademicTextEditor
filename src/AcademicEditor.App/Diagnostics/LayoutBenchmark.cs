@@ -182,6 +182,24 @@ public static class LayoutBenchmark
         PageRenderer.Render(context, paginated, widthDip, caret: null, viewport);
     }
 
+    /// <summary>
+    /// Grava o documento do benchmark num arquivo, para abri-lo no editor de verdade e sentir a
+    /// latência em vez de só lê-la num número.
+    /// </summary>
+    public static void WriteCorpus(string path)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+
+        var directory = Path.GetDirectoryName(Path.GetFullPath(path));
+
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        File.WriteAllText(path, BuildDocument(Paragraphs, WordsPerParagraph));
+    }
+
     private static double TimeOnly(Action work)
     {
         work();

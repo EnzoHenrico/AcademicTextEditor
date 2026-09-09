@@ -28,6 +28,13 @@ class Program
             return;
         }
 
+        if (args is ["--write-corpus", var path])
+        {
+            Diagnostics.LayoutBenchmark.WriteCorpus(path);
+            Console.WriteLine($"corpus gravado em {Path.GetFullPath(path)}");
+            return;
+        }
+
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 
