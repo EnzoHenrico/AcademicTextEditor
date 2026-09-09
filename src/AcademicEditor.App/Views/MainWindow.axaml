@@ -8,7 +8,39 @@
         Title="AcademicEditor"
         Width="900" Height="700"
         Background="#E4E4E7">
-    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-        <controls:PageSurface x:Name="Surface" />
-    </ScrollViewer>
+    <!--
+        DockPanel com a barra de status ancorada embaixo e o ScrollViewer preenchendo o resto
+        (LastChildFill). É o mesmo esqueleto que a barra de menu da Fatia 7 vai precisar: mudar o
+        cromo da janela uma vez, e não duas.
+
+        Nada aqui é focável — TextBlock não é —, então o PageSurface continua recebendo o teclado
+        sem disputa, que é o que mantém o Ctrl+S e as setas indo para onde iam.
+    -->
+    <DockPanel>
+        <Border DockPanel.Dock="Bottom"
+                Background="#D4D4D8"
+                BorderBrush="#B4B4BA"
+                BorderThickness="0,1,0,0"
+                Padding="10,4">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock x:Name="StatusText"
+                           FontSize="12"
+                           Foreground="#3F3F46"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" />
+
+                <TextBlock x:Name="StatusPath"
+                           Grid.Column="1"
+                           Margin="16,0,0,0"
+                           FontSize="12"
+                           Foreground="#6B6B75"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" />
+            </Grid>
+        </Border>
+
+        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+            <controls:PageSurface x:Name="Surface" />
+        </ScrollViewer>
+    </DockPanel>
 </Window>

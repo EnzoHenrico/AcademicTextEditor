@@ -60,7 +60,8 @@ public static class SelectionGeometry
 
         while (page >= 0 && (page < lastPage || (page == lastPage && line <= lastLine)))
         {
-            if (RectFor(document.Pages[page].Lines[line], page, range, measurer) is { } rect)
+            if (RectFor(document.Pages[page].Lines[line], page, range, measurer, document.Typography.Body)
+                is { } rect)
             {
                 rects.Add(rect);
             }
@@ -71,11 +72,16 @@ public static class SelectionGeometry
         return rects;
     }
 
+    /// <param name="body">
+    /// O corpo de texto do documento, para a lasca da linha em branco. Vem do preset que paginou —
+    /// medir um espaço num estilo que não é o do documento daria uma lasca de outra largura.
+    /// </param>
     private static SelectionRect? RectFor(
         LaidOutLine line,
         int pageIndex,
         TextRange range,
-        ITextMeasurer measurer)
+        ITextMeasurer measurer,
+        TextStyle body)
     {
         var start = Math.Max(range.Start, line.SourceStart);
         var end = Math.Min(range.End, line.SourceEnd);
@@ -101,7 +107,7 @@ public static class SelectionGeometry
                 pageIndex,
                 leftPt,
                 line.YPt,
-                measurer.MeasureWidthPt(" ", TextStyle.Body),
+                measurer.MeasureWidthPt(" ", body),
                 line.HeightPt)
             : null;
     }

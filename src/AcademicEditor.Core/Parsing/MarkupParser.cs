@@ -1,3 +1,4 @@
+using AcademicEditor.Core.Layout;
 using AcademicEditor.Core.Parsing.Ast;
 
 namespace AcademicEditor.Core.Parsing;
@@ -21,6 +22,12 @@ namespace AcademicEditor.Core.Parsing;
 /// aqui sem tocar no motor de layout.
 /// </para>
 /// <para>
+/// <b>O corpo e a escala de títulos vêm do <see cref="TypographyPreset"/></b>, e não de constantes
+/// aqui: com que fonte e em que corpo o documento é composto é decisão de norma. Isso faz o parser
+/// consultar um tipo de <c>Layout/</c> apesar de vir antes dele no pipeline — é a única direção em
+/// que os dois se conhecem além da AST, e é deliberada.
+/// </para>
+/// <para>
 /// <b>Pressupõe fonte normalizada em LF.</b> Com CRLF cru, o <c>\r</c> fica fora de todo run e
 /// abre um vão de um caractere entre o fim de uma linha e o início da seguinte. A normalização é
 /// feita na leitura do arquivo (Core/IO).
@@ -28,14 +35,15 @@ namespace AcademicEditor.Core.Parsing;
 /// </remarks>
 public static class MarkupParser
 {
-    // Preset tipográfico do MVP. Na Fase 6 isto vira parte de um preset de norma (ABNT/APA)
-    // junto com PageSettings, em vez de constante no parser.
-    private static readonly double[] HeadingSizesPt = [20.0, 17.0, 14.0, 12.0, 11.0, 11.0];
-
-    public static DocumentNode Parse(string source)
+    /// <param name="preset">
+    /// A norma tipográfica. <c>null</c> usa o <see cref="TypographyPreset.Default"/>, que é o do
+    /// MVP — o aplicativo passa o dele.
+    /// </param>
+    public static DocumentNode Parse(string source, TypographyPreset? preset = null)
     {
         ArgumentNullException.ThrowIfNull(source);
 
+        var typography = preset ?? TypographyPreset.Default;
         var tokens = MarkupTokenizer.Tokenize(source);
         var blocks = new List<BlockNode>(tokens.Count);
 
@@ -44,20 +52,20 @@ public static class MarkupParser
             blocks.Add(token.Kind switch
             {
                 MarkupTokenKind.PageBreak => new PageBreakNode(token.LineStart, token.LineLength),
-                MarkupTokenKind.Heading => BuildHeading(source, token),
+                MarkupTokenKind.Heading => BuildHeading(source, token, typography),
 
                 // Texto e linha em branco são o mesmo bloco: a segunda é a primeira sem conteúdo.
                 // Uma linha só de espaços mantém os espaços, e o caret anda por dentro deles.
-                _ => BuildParagraph(source, token),
+                _ => BuildParagraph(source, token, typography),
             });
         }
 
         return new DocumentNode(blocks);
     }
 
-    private static HeadingNode BuildHeading(string source, MarkupToken token)
+    private static HeadingNode BuildHeading(string source, MarkupToken token, TypographyPreset preset)
     {
-        var style = new TextStyle(HeadingSizesPt[token.Level - 1], FontWeightKind.Bold, Italic: false);
+        var style = preset.Heading(token.Level);
         var markupLength = token.ContentStart - token.LineStart;
 
         // O "## " sai com o MESMO estilo do heading. Revelar a marcação passa a mudar a largura da
@@ -72,8 +80,8 @@ public static class MarkupParser
         return new HeadingNode(token.Level, token.LineStart, token.LineLength, runs);
     }
 
-    private static ParagraphNode BuildParagraph(string source, MarkupToken token) =>
-        new(token.LineStart, token.LineLength, BuildRuns(source, token, TextStyle.Body));
+    private static ParagraphNode BuildParagraph(string source, MarkupToken token, TypographyPreset preset) =>
+        new(token.LineStart, token.LineLength, BuildRuns(source, token, preset.Body));
 
     // Todo bloco emite ao menos um run, ainda que de texto vazio. É dele que o line breaker tira
     // a altura e o offset da linha: sem run algum, "# " recém-digitado seria medido com a altura

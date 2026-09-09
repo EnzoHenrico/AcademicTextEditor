@@ -36,12 +36,28 @@ public sealed class AvaloniaTextMeasurer : ITextMeasurer
     // tipo impede que uma segunda repaginação comece antes de a anterior ser descartada.
     private readonly ConcurrentDictionary<TextStyle, LineMetrics> _lineMetrics = new();
 
+    // Uma FontFamily por nome, não uma por chamada. ToTypeface é chamado no desenho de CADA run de
+    // CADA linha visível, a cada quadro — e `new FontFamily(nome)` analisa a string e aloca. Com o
+    // culling são ~150 runs por quadro; sem o cache, seriam 150 objetos de vida curtíssima na
+    // geração 0 a cada repintura do caret, duas vezes por segundo, para sempre.
+    //
+    // ConcurrentDictionary pelo mesmo motivo do resto da classe: a medição roda em background.
+    private static readonly ConcurrentDictionary<string, FontFamily> Families = new(StringComparer.Ordinal);
+
     /// <summary>
     /// Traduz o estilo do Core para o toolkit. É o único ponto onde essa tradução acontece:
     /// medição e desenho precisam do mesmo typeface, ou um mede o que o outro não desenha.
     /// </summary>
+    /// <remarks>
+    /// Família vazia é a fonte padrão do sistema — o Core não tem como saber qual é, e é aqui que
+    /// isso se resolve. O nome pode trazer alternativas separadas por vírgula ("Times New Roman,
+    /// Liberation Serif"): o gerenciador de fontes tenta na ordem, que é o que faz o mesmo preset
+    /// sair com serifa tanto no Windows quanto no Linux.
+    /// </remarks>
     public static Typeface ToTypeface(TextStyle style) => new(
-        FontFamily.Default,
+        style.FontFamily.Length == 0
+            ? FontFamily.Default
+            : Families.GetOrAdd(style.FontFamily, static name => new FontFamily(name)),
         style.Italic ? FontStyle.Italic : FontStyle.Normal,
         style.Weight == FontWeightKind.Bold ? FontWeight.Bold : FontWeight.Normal);
 

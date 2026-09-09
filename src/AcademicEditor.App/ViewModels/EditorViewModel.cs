@@ -29,6 +29,7 @@ public sealed class EditorViewModel
     private bool _pendingPagination;
 
     private PageSettings _pageSettings;
+    private TypographyPreset _typography;
 
     // O texto que gerou o layout publicado. É contra ele que a próxima paginação descobre o que
     // mudou — comparar dois textos é exato e dispensa rastrear edição por edição.
@@ -38,11 +39,16 @@ public sealed class EditorViewModel
     private bool _caretColumnStale = true;
     private DocumentEncoding _encoding = DocumentEncoding.Utf8;
 
+    /// <param name="typography">
+    /// A norma tipográfica. <c>null</c> usa o <see cref="TypographyPreset.Default"/>, que é o do
+    /// MVP — a janela passa o da ABNT.
+    /// </param>
     public EditorViewModel(
         ITextMeasurer measurer,
         PageSettings pageSettings,
         string initialText,
-        IDocumentStorage? storage = null)
+        IDocumentStorage? storage = null,
+        TypographyPreset? typography = null)
     {
         ArgumentNullException.ThrowIfNull(measurer);
         ArgumentNullException.ThrowIfNull(initialText);
@@ -50,13 +56,14 @@ public sealed class EditorViewModel
         _measurer = measurer;
         _storage = storage ?? new FileDocumentStorage();
         _pageSettings = pageSettings;
+        _typography = typography ?? TypographyPreset.Default;
         _document = new EditorDocument(initialText);
         _undo = new UndoRedoStack(_document);
 
         // No começo do documento, não no fim: é onde todo editor põe o caret ao abrir um
         // arquivo — e, com a rolagem automática, deixá-lo no fim abriria o app na última folha.
         _selection = Selection.At(new Caret(0, 0.0));
-        Paginated = PaginatedDocument.Empty(pageSettings);
+        Paginated = PaginatedDocument.Empty(pageSettings, _typography);
 
         SchedulePagination();
     }
@@ -125,6 +132,28 @@ public sealed class EditorViewModel
             }
 
             _pageSettings = value;
+            SchedulePagination();
+        }
+    }
+
+    /// <summary>A norma tipográfica em uso. Trocá-la repagina o documento inteiro.</summary>
+    /// <remarks>
+    /// Do zero, e não por reaproveitamento: as linhas publicadas foram medidas na fonte anterior, e
+    /// o <c>LayoutEngine</c> recusa reaproveitá-las justamente por isso.
+    /// </remarks>
+    public TypographyPreset Typography
+    {
+        get => _typography;
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+
+            if (_typography == value)
+            {
+                return;
+            }
+
+            _typography = value;
             SchedulePagination();
         }
     }
@@ -584,6 +613,7 @@ public sealed class EditorViewModel
                 // que são trocados na mesma linha do Publish e nunca chegam lá descasados.
                 var snapshot = _document.CreateSnapshot();
                 var settings = _pageSettings;
+                var typography = _typography;
                 var caretOffset = Caret.Offset;
                 var published = new Published(_publishedSource, Paginated);
 
@@ -595,11 +625,12 @@ public sealed class EditorViewModel
                     var source = snapshot.GetText();
 
                     return (Source: source, Document: LayoutEngine.Layout(
-                        MarkupParser.Parse(source),
+                        MarkupParser.Parse(source, typography),
                         settings,
                         _measurer,
                         caretOffset,
-                        LayoutReuse.Between(published.Source, source, published.Document)));
+                        LayoutReuse.Between(published.Source, source, published.Document),
+                        typography));
                 }).ConfigureAwait(true);
 
                 Publish(laidOut.Document, laidOut.Source);

@@ -12,7 +12,7 @@ public sealed class LineBreakerTests
 
     private static readonly FakeTextMeasurer Measurer = new();
 
-    private static readonly TextStyle Large = new(22.0, FontWeightKind.Bold, Italic: false);
+    private static readonly TextStyle Large = TextStyle.Body with { FontSizePt = 22.0, Weight = FontWeightKind.Bold };
 
     [Fact]
     public void Texto_que_cabe_fica_numa_linha_so()

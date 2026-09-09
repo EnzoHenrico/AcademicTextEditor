@@ -30,6 +30,16 @@ namespace AcademicEditor.App.Diagnostics;
 /// </remarks>
 public static class LayoutBenchmark
 {
+    /// <summary>A norma tipográfica que este banco de provas mede.</summary>
+    /// <remarks>
+    /// <b>Deliberadamente o preset do MVP, e não o que o aplicativo usa.</b> Todos os números
+    /// registrados no roadmap — 910ms sem cache, 309ms a frio, 68ms a quente, 11,2ms com reflow —
+    /// saíram deste preset, e trocá-lo aqui os tornaria incomparáveis sem que ninguém percebesse.
+    /// Medir o preset da ABNT é um número novo, não uma correção deste: corpo 12 em vez de 11 dá
+    /// ~9% mais linhas, e entrelinhamento 1,5 dá ~50% mais folhas para o mesmo texto.
+    /// </remarks>
+    private static readonly TypographyPreset Preset = TypographyPreset.Default;
+
     // Dimensionado para ~300 páginas de A4 com o medidor real, que cabe bem mais caractere por
     // linha que o determinístico dos testes — daí o corpus ser maior que o de lá.
     private const int Paragraphs = 1210;
@@ -96,9 +106,9 @@ public static class LayoutBenchmark
         output.WriteLine(string.Empty);
         // Decomposição do caminho quente: com o cache cheio, onde estão os milissegundos de uma
         // tecla. É o que aponta para qual nível do reflow incremental paga primeiro.
-        var ast = MarkupParser.Parse(source);
-        var parse = TimeOnly(() => MarkupParser.Parse(source));
-        var layout = TimeOnly(() => LayoutEngine.Layout(ast, PageSettings.A4, cache));
+        var ast = MarkupParser.Parse(source, Preset);
+        var parse = TimeOnly(() => MarkupParser.Parse(source, Preset));
+        var layout = TimeOnly(() => LayoutEngine.Layout(ast, PageSettings.A4, cache, preset: Preset));
 
         output.WriteLine($"  ↳ parser          : {parse:N1} ms");
         output.WriteLine($"  ↳ layout          : {layout:N1} ms");
@@ -210,15 +220,18 @@ public static class LayoutBenchmark
     private static double Keystroke(string source, ITextMeasurer measurer)
     {
         var caret = source.Length / 2;
-        var previous = LayoutEngine.Layout(MarkupParser.Parse(source), PageSettings.A4, measurer, caret);
+        var previous = LayoutEngine.Layout(
+            MarkupParser.Parse(source, Preset), PageSettings.A4, measurer, caret, preset: Preset);
+
         var edited = source.Insert(caret, "X");
 
         return TimeOnly(() => LayoutEngine.Layout(
-            MarkupParser.Parse(edited),
+            MarkupParser.Parse(edited, Preset),
             PageSettings.A4,
             measurer,
             caret + 1,
-            LayoutReuse.Between(source, edited, previous)));
+            LayoutReuse.Between(source, edited, previous),
+            Preset));
     }
 
     private static double TimeOnly(Action work)
@@ -243,7 +256,7 @@ public static class LayoutBenchmark
     }
 
     private static PaginatedDocument Paginate(string source, ITextMeasurer measurer) =>
-        LayoutEngine.Layout(MarkupParser.Parse(source), PageSettings.A4, measurer);
+        LayoutEngine.Layout(MarkupParser.Parse(source, Preset), PageSettings.A4, measurer, preset: Preset);
 
     /// <summary>
     /// Parágrafos separados por linha em branco — a forma que o autor escreve e a que o parser vê:

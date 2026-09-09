@@ -5,7 +5,7 @@ namespace AcademicEditor.Core.Tests.Layout;
 
 public sealed class CachingTextMeasurerTests
 {
-    private static readonly TextStyle Large = new(22.0, FontWeightKind.Bold, Italic: false);
+    private static readonly TextStyle Large = TextStyle.Body with { FontSizePt = 22.0, Weight = FontWeightKind.Bold };
 
     // A razão de existir do cache: o line breaker mede a mesma palavra toda vez que ela aparece.
     [Fact]
