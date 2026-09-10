@@ -18,7 +18,7 @@ public static class Text
 
         A marcação inline é **negrito**, *itálico* e ***os dois***, e ela aparece na linha onde o caret está — como o `##` de um título. Um asterisco sem par, ou um usado como multiplicação (2 * 3), continua sendo texto.
 
-        A chamada de nota de rodapé é `[^1]`, e o que aparece é o identificador, sobrescrito[^1]. Uma fórmula vai entre cifrões — seja $E = mc^2$ a energia —, e sai em itálico, que é como uma variável se compõe. Nenhum dos dois é tipografado de verdade: o compositor de fórmulas é outra fase.
+        A chamada de nota de rodapé é `[^1]` no meio da frase[^1], e o que aparece é o identificador, sobrescrito. Para declarar a nota, escreva `[^1]: o texto dela` sozinho numa linha, em qualquer lugar do arquivo — o rótulo entre os colchetes é o que casa uma com a outra, e pode ser qualquer palavra sem espaço. Uma fórmula vai entre cifrões — seja $E = mc^2$ a energia —, e sai em itálico, que é como uma variável se compõe. Nenhum dos dois é tipografado de verdade: o compositor de fórmulas é outra fase.
 
         [^1]: Esta definição está escrita aqui, no meio do arquivo, e é desenhada lá embaixo — no pé da folha em que a chamada aparece, abaixo do filete. Uma definição que ninguém chama continua sendo parágrafo comum, no lugar onde foi escrita. Editá-la é editar um parágrafo: o caret pousa nela, a seleção a cobre, e as setas a atravessam.
 

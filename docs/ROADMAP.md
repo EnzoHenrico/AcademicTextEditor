@@ -1604,6 +1604,16 @@ Registrado desta fatia:
 - **O filete vai para o PDF, ao contrário do tracejado do `\page`.** Aquele é marca de edição e o
   leitor não deve encontrá-lo no papel; este é convenção tipográfica, e sem ele o leitor não sabe
   onde o texto termina e a nota começa
+- **A entrega foi recusada uma vez, e por um teste que faltou.** A fatia provava que a nota era
+  *posicionada* certo e nunca que o caret *entrava* nela: clicar na nota travava o cursor no começo
+  da linha, e ← e → não andavam por dentro. A causa era a pergunta errada — enquanto só existiam
+  `Text` e `PageBreak`, "é texto?" e "não é marcador?" eram a mesma coisa, e o `CaretNavigator`
+  perguntava a primeira em quatro lugares. A nota chegou como um `Kind` novo e caiu do lado errado.
+  `LaidOutLine.IsEditable` passa a fazer a pergunta certa, e **inverte o padrão para o lado
+  seguro**: num editor de texto, linha nova é editável até dizer o contrário
+- **É a mesma falha que o `CLAUDE.md` descreve**, na terceira vez: invariante coberta num caminho
+  só. A regra "a invariante roda em todos os caminhos que o aplicativo pode produzir" vale também
+  para o caret, e não só para a margem — um `Kind` novo é um caminho novo
 - **Fica devido: a nota sai no corpo do texto, em 12pt.** A ABNT quer corpo menor e entrelinhamento
   simples nas notas. É um `TextStyle` a mais no `TypographyPreset` e um espaçamento por estilo no
   line breaker — decisão de norma, não de layout, e entra junto com "Normas configuráveis"

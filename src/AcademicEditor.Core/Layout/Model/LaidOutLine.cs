@@ -47,6 +47,24 @@ public sealed record LaidOutLine(
 {
     public int SourceEnd => SourceStart + SourceLength;
 
+    /// <summary>O caret anda por <b>dentro</b> desta linha?</summary>
+    /// <remarks>
+    /// <para>
+    /// Falso só nos marcadores atômicos, hoje o <c>\page</c>: ali o caret pousa na linha como
+    /// unidade e as teclas de apagar removem o marcador inteiro. Todo o resto é texto que o autor
+    /// edita, <b>a nota de rodapé inclusive</b>.
+    /// </para>
+    /// <para>
+    /// <b>Existe porque a pergunta errada custou uma entrega.</b> Enquanto só havia
+    /// <c>Text</c> e <c>PageBreak</c>, "é texto?" e "não é marcador?" eram a mesma pergunta, e o
+    /// caret perguntava a primeira. A nota chegou como um <c>Kind</c> novo e caiu do lado errado:
+    /// clicar nela devolvia o começo da linha, e ← e → não andavam por dentro. Perguntar pelo
+    /// marcador inverte o padrão para o lado seguro — num editor de texto, linha nova é editável
+    /// até dizer o contrário.
+    /// </para>
+    /// </remarks>
+    public bool IsEditable => Kind != LineKind.PageBreak;
+
     /// <summary>Os identificadores das notas que esta linha chama. Vazia quase sempre.</summary>
     /// <remarks>
     /// É o que o page breaker pergunta para saber quanto de folha reservar antes de assentar a

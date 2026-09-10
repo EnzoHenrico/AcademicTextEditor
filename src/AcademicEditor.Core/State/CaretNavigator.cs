@@ -90,7 +90,7 @@ public static class CaretNavigator
 
         // Um marcador de bloco é indivisível — a mesma regra que o Stop() aplica às setas. Clicar
         // no meio do filete tracejado não descreve nada que o autor possa editar.
-        var offset = target.Kind == LineKind.Text
+        var offset = target.IsEditable
             ? CaretGeometry.OffsetAtColumn(target, xPt, measurer)
             : target.SourceStart;
 
@@ -142,7 +142,7 @@ public static class CaretNavigator
 
         var current = document.Pages[page].Lines[line];
 
-        if (current.Kind == LineKind.Text && caret.Offset > current.SourceStart)
+        if (current.IsEditable && caret.Offset > current.SourceStart)
         {
             return At(caret.Offset - StepBefore(current, caret.Offset), document, measurer);
         }
@@ -175,7 +175,7 @@ public static class CaretNavigator
 
         var current = document.Pages[page].Lines[line];
 
-        if (current.Kind == LineKind.Text && caret.Offset < current.SourceEnd)
+        if (current.IsEditable && caret.Offset < current.SourceEnd)
         {
             return At(caret.Offset + StepAfter(current, caret.Offset), document, measurer);
         }
@@ -359,7 +359,7 @@ public static class CaretNavigator
     /// o atravessam de uma tecla, como fazem com um par substituto.
     /// </remarks>
     private static int Stop(LaidOutLine line, bool atEnd) =>
-        line.Kind == LineKind.Text && atEnd ? line.SourceEnd : line.SourceStart;
+        line.IsEditable && atEnd ? line.SourceEnd : line.SourceStart;
 
     // Um par substituto é um caractere só para quem escreveu. As setas atravessam os dois code
     // units de uma vez, senão metade das teclas não moveria o caret lugar nenhum visível.

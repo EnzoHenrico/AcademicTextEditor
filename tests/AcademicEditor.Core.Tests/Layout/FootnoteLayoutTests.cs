@@ -1,6 +1,7 @@
 using AcademicEditor.Core.Layout;
 using AcademicEditor.Core.Layout.Model;
 using AcademicEditor.Core.Parsing;
+using AcademicEditor.Core.State;
 
 namespace AcademicEditor.Core.Tests.Layout;
 
@@ -192,6 +193,62 @@ public sealed class FootnoteLayoutTests
                 full.Pages[page].Lines.Select(line => (line.SourceStart, line.YPt, line.Kind)),
                 reused.Pages[page].Lines.Select(line => (line.SourceStart, line.YPt, line.Kind)));
         }
+    }
+
+    /// <summary>
+    /// O caret entra na nota: clique, setas e End andam por <b>dentro</b> dela.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Os testes que faltavam, e a entrega foi recusada por isso.</b> A fatia provava que a nota
+    /// era <i>posicionada</i> certo e nunca que o caret <i>entrava</i> nela — invariante coberta num
+    /// caminho só, que é a falha que o `CLAUDE.md` descreve.
+    /// </para>
+    /// <para>
+    /// A causa era a pergunta errada: enquanto só havia texto e marcador de página, "é texto?" e
+    /// "não é marcador?" eram a mesma coisa, e o caret perguntava a primeira. A nota chegou como um
+    /// <c>Kind</c> novo e virou unidade indivisível — clicar devolvia o começo da linha.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void O_caret_anda_por_dentro_da_nota()
+    {
+        var document = Layout("aaa[^1]\n[^1]: nota");
+        var note = document.Pages[0].Lines[^1];
+
+        Assert.Equal(LineKind.Footnote, note.Kind);
+        Assert.True(note.IsEditable);
+
+        // Clicar no meio da nota pousa na coluna clicada, e não no começo da linha.
+        var clicked = CaretNavigator.AtPoint(
+            0, CaretGeometry.ColumnPt(note, note.SourceStart + 8, Measurer), note.YPt + 1.0, document, Measurer);
+
+        Assert.Equal(note.SourceStart + 8, clicked.Offset);
+
+        // E as setas andam de um caractere, em vez de saltarem a linha inteira.
+        Assert.Equal(clicked.Offset + 1, CaretNavigator.MoveRight(clicked, document, Measurer).Offset);
+        Assert.Equal(clicked.Offset - 1, CaretNavigator.MoveLeft(clicked, document, Measurer).Offset);
+
+        // End vai ao fim da nota, e não ao começo dela.
+        Assert.Equal(note.SourceEnd, CaretNavigator.MoveToLineEnd(clicked, document, Measurer).Offset);
+    }
+
+    /// <remarks>
+    /// O contraste que dá sentido à regra: o marcador de quebra de página <b>continua</b> sendo
+    /// unidade indivisível. Clicar no meio do filete não descreve nada que o autor possa editar.
+    /// </remarks>
+    [Fact]
+    public void O_marcador_de_pagina_continua_indivisivel()
+    {
+        var document = Layout("aaa\n\\page\nbbb");
+        var marker = document.Pages[0].Lines[1];
+
+        Assert.Equal(LineKind.PageBreak, marker.Kind);
+        Assert.False(marker.IsEditable);
+
+        var clicked = CaretNavigator.AtPoint(0, 40.0, marker.YPt + 1.0, document, Measurer);
+
+        Assert.Equal(marker.SourceStart, clicked.Offset);
     }
 
     private static string TextOf(LaidOutLine line) => string.Concat(line.Runs.Select(run => run.Text));
