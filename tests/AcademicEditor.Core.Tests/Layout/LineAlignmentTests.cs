@@ -126,28 +126,58 @@ public sealed class LineAlignmentTests
         }
     }
 
+    /// <summary>
+    /// As duas garantias da margem valem em <b>todo</b> alinhamento, não só à esquerda.
+    /// </summary>
     /// <remarks>
-    /// A mesma garantia da Fatia 5.3, agora com as linhas esticadas: nenhum glifo passa da margem.
-    /// Distribuir a sobra só pode encostar a tinta nela — nunca empurrá-la para fora.
+    /// <para>
+    /// Este é o teste que faltava, e o que a Fatia 4 deveria ter escrito. As garantias da Fatia 5.3
+    /// moravam no <c>LineBreakerTests</c>, que quebra sempre à esquerda — e à esquerda
+    /// <c>LineAlignment.Apply</c> retorna na primeira linha. O passe inteiro ficou sem cobertura de
+    /// margem, e voltou a pendurar grupos de branco fora do papel.
+    /// </para>
+    /// <para>
+    /// Os textos com <b>vários brancos seguidos</b> são o que expõe o defeito, e por isso estão
+    /// aqui em vez de num caso feliz: <c>"a  b   c    dddddddddddd"</c> saía a 130pt e
+    /// <c>"ab cd    efghijklmno"</c> a 140pt, contra uma margem de 100pt.
+    /// </para>
     /// </remarks>
     [Theory]
-    [InlineData("ab cd ef ghijklmno")]
-    [InlineData("um dois tres quatro cinco seis sete oito nove dez onze doze")]
-    [InlineData("a  b   c    dddddddddddd")]
-    [InlineData("palavra")]
-    public void Nenhum_glifo_passa_da_margem_numa_linha_justificada(string text)
-    {
-        foreach (var line in Break(text, TextAlignment.Justify))
-        {
-            foreach (var run in line.Runs)
-            {
-                var inkEndPt = run.XPt + Measurer.MeasureWidthPt(run.Text.AsSpan().TrimEnd(), run.Style);
+    [MemberData(nameof(TodoAlinhamentoDeCadaTexto))]
+    public void A_margem_vale_em_todo_alinhamento(string text, TextAlignment alignment) =>
+        MarginInvariants.AssertHolds(
+            Break(text, alignment), MaxWidthPt, Measurer, Measurer.CharWidthPt);
 
-                Assert.True(
-                    inkEndPt <= MaxWidthPt + 1e-9,
-                    $"'{run.Text}' termina em {inkEndPt}pt, além da margem de {MaxWidthPt}pt");
+    public static TheoryData<string, TextAlignment> TodoAlinhamentoDeCadaTexto()
+    {
+        string[] texts =
+        [
+            "ab cd ef ghijklmno",
+            "um dois tres quatro cinco seis sete oito nove dez onze doze",
+
+            // Grupo de brancos que a tolerância parte: dois cabem, o terceiro pendura.
+            "a  b   c    dddddddddddd",
+
+            // Grupo que cabe inteiro dentro da margem — aqui a justificação sozinha o punha fora.
+            "ab cd    efghijklmno",
+
+            // Brancos no fim de um bloco de uma linha só, que é o caso de Center e Right.
+            "abc    ",
+            "palavra",
+            "          ",
+        ];
+
+        var data = new TheoryData<string, TextAlignment>();
+
+        foreach (var text in texts)
+        {
+            foreach (var alignment in Enum.GetValues<TextAlignment>())
+            {
+                data.Add(text, alignment);
             }
         }
+
+        return data;
     }
 
     private static List<LaidOutLine> Break(string text, TextAlignment alignment) =>

@@ -93,8 +93,12 @@ public static class SelectionGeometry
         // "Origem da linha" é onde o primeiro run começa, e não zero: numa linha centralizada ou
         // alinhada à direita o texto não encosta na margem esquerda, e um destaque que começasse
         // ali marcaria papel em branco antes da primeira letra.
+        // À direita é a extensão CRUA, e não a tinta: o branco pendurado na margem faz parte do
+        // trecho selecionado, e um destaque que parasse antes dele diria que ele não está lá. Com
+        // a tolerância valendo para todo alinhamento, isso nunca passa da margem por mais de um
+        // branco — antes, numa linha justificada, passava pelo grupo inteiro.
         var leftPt = start <= line.SourceStart ? StartPt(line) : CaretGeometry.ColumnPt(line, start, measurer);
-        var rightPt = end >= line.SourceEnd ? InkEndPt(line) : CaretGeometry.ColumnPt(line, end, measurer);
+        var rightPt = end >= line.SourceEnd ? LineExtents.ExtentPt(line) : CaretGeometry.ColumnPt(line, end, measurer);
 
         if (rightPt > leftPt)
         {
@@ -119,7 +123,4 @@ public static class SelectionGeometry
     /// <summary>Onde a linha começa. Sem medir: o primeiro run já está posicionado.</summary>
     private static double StartPt(LaidOutLine line) => line.Runs.Count == 0 ? 0.0 : line.Runs[0].XPt;
 
-    /// <summary>Onde a tinta da linha termina. Sem medir: os runs já estão posicionados.</summary>
-    private static double InkEndPt(LaidOutLine line) =>
-        line.Runs.Count == 0 ? 0.0 : line.Runs[^1].XPt + line.Runs[^1].WidthPt;
 }

@@ -15,6 +15,26 @@ guarda de arquitetura + build sem warnings + testes. Um hook `pre-commit` bloque
 commits que violem isso. Se o gate falhar, o trabalho não está pronto: corrija antes
 de reportar conclusão.
 
+### Mas o gate não aceita a fatia
+
+O gate diz que nada regrediu **no que já está coberto**. Ele não diz que a fatia funciona,
+e três fatias seguidas da Fase 6 foram entregues verdes e quebradas — a PR #6 foi recusada
+por dois bugs que aparecem em menos de um minuto de digitação real. A causa foi sempre a
+mesma: teste e medição descrevendo uma configuração que o aplicativo não executa. Daí estas
+quatro regras, que valem para qualquer fatia que toque o motor de layout:
+
+- **A invariante roda em todos os caminhos que o aplicativo pode produzir**, não só naquele
+  que o autor da fatia tinha em mente — os quatro alinhamentos, os dois presets. Invariante
+  coberta num caminho só morre calada no dia em que aparece um caminho novo.
+- **Toda invariante do motor tem um dono único e nomeado.** Cinco cópias de "onde a linha
+  termina", com três semânticas, foi o que deixou a Fatia 4 violar a Fatia 5.3 sem que nada
+  ficasse vermelho.
+- **Todo número de desempenho declara o preset e o corpus que o produziram**, e o aplicativo
+  usa `TypographyPreset.Abnt` sobre texto **com** marcação. Um número tirado do preset do MVP
+  num corpus de prosa lisa não descreve o produto.
+- **Fatia entregue é fatia aberta no aplicativo**, com o corpus de verdade. "O app abriu e
+  ficou de pé" não é conferência.
+
 ## Comandos
 
 `dev.sh` é versionado: a lista de alvos do publish e as flags de build são decisões do

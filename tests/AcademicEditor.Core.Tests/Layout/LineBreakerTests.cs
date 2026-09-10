@@ -99,9 +99,7 @@ public sealed class LineBreakerTests
     {
         var lines = Break(text);
 
-        Assert.All(lines, line => Assert.True(
-            InkExtentPt(line) <= MaxWidthPt,
-            $"linha '{TextOf(line)}' põe tinta até {InkExtentPt(line)}pt, além dos {MaxWidthPt}pt da margem"));
+        MarginInvariants.AssertNoGlyphPastMargin(lines, MaxWidthPt, Measurer);
 
         Assert.Equal(text, string.Concat(lines.Select(TextOf)));
     }
@@ -115,14 +113,8 @@ public sealed class LineBreakerTests
     [InlineData("aaaaaaaaa aaaaaaaaa aaaaaaaaa")]
     [InlineData("abcdefghijklm")]
     [InlineData("          ")]
-    public void Nenhuma_linha_passa_da_margem_por_mais_de_um_branco(string text)
-    {
-        var tolerance = MaxWidthPt + Measurer.CharWidthPt;
-
-        Assert.All(Break(text), line => Assert.True(
-            ExtentPt(line) <= tolerance,
-            $"linha '{TextOf(line)}' chega a {ExtentPt(line)}pt, além dos {tolerance}pt tolerados"));
-    }
+    public void Nenhuma_linha_passa_da_margem_por_mais_de_um_branco(string text) =>
+        MarginInvariants.AssertNoLinePastOneBlank(Break(text), MaxWidthPt, Measurer.CharWidthPt);
 
     [Fact]
     public void Palavra_mais_larga_que_a_pagina_e_partida_no_que_cabe()
@@ -242,28 +234,4 @@ public sealed class LineBreakerTests
         LineBreaker.BreakIntoLines([new InlineRun(text, 0, TextStyle.Body)], MaxWidthPt, Measurer);
 
     private static string TextOf(LaidOutLine line) => string.Concat(line.Runs.Select(run => run.Text));
-
-    /// <summary>Até onde a linha chega, medida como foi assentada — o branco final incluído.</summary>
-    private static double ExtentPt(LaidOutLine line) =>
-        line.Runs.Count == 0 ? 0.0 : line.Runs[^1].XPt + line.Runs[^1].WidthPt;
-
-    /// <summary>
-    /// Até onde a linha desenha alguma coisa. O espaço final é descontado de propósito: ele ocupa
-    /// largura e não põe glifo nenhum no papel, e é essa distinção que a regra da margem usa.
-    /// </summary>
-    private static double InkExtentPt(LaidOutLine line)
-    {
-        for (var index = line.Runs.Count - 1; index >= 0; index--)
-        {
-            var run = line.Runs[index];
-            var ink = run.Text.AsSpan().TrimEnd();
-
-            if (ink.Length > 0)
-            {
-                return run.XPt + Measurer.MeasureWidthPt(ink, run.Style);
-            }
-        }
-
-        return 0.0;
-    }
 }

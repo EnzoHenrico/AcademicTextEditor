@@ -43,7 +43,13 @@ internal static class LineAlignment
                 continue;
             }
 
-            var slackPt = maxWidthPt - InkEndPt(line, measurer);
+            // A sobra é medida contra a extensão que TEM de caber na margem — a linha inteira
+            // menos o único branco que a tolerância deixa pendurar. Medir contra a tinta, como
+            // esta linha fazia, devolve o grupo INTEIRO de brancos à sobra: a justificação encosta
+            // a tinta na margem e reemite o grupo depois dela, e uma linha terminada em quatro
+            // espaços sai 40pt fora do papel. É a garantia da Fatia 5.3 desfeita pelo passe que
+            // roda depois dela.
+            var slackPt = maxWidthPt - LineExtents.AlignExtentPt(line, measurer);
 
             if (slackPt <= 0.0)
             {
@@ -52,7 +58,12 @@ internal static class LineAlignment
 
             lines[index] = alignment switch
             {
-                TextAlignment.Center => Shift(line, slackPt / 2.0),
+                // Centralizar continua sendo pela tinta — um espaço final invisível deslocaria a
+                // linha meio caractere —, mas nunca mais do que a tolerância permite pendurar.
+                TextAlignment.Center => Shift(
+                    line,
+                    Math.Min((maxWidthPt - LineExtents.InkExtentPt(line, measurer)) / 2.0, slackPt)),
+
                 TextAlignment.Right => Shift(line, slackPt),
 
                 // A última linha do bloco não é justificada: ela não foi interrompida pela margem,
@@ -62,29 +73,6 @@ internal static class LineAlignment
                 _ => line,
             };
         }
-    }
-
-    /// <summary>Onde a <b>tinta</b> da linha termina — o branco do fim não conta.</summary>
-    /// <remarks>
-    /// É o corolário da tolerância de margem da Fatia 5.3: uma linha quebrada pela largura quase
-    /// sempre termina num branco pendurado, invisível. Centralizar pela extensão crua deslocaria a
-    /// linha meio espaço para a esquerda, e justificar por ela deixaria a margem direita irregular
-    /// justamente onde ela devia ficar reta.
-    /// <para>
-    /// <b>Subtrair é exato:</b> a largura do run é a soma das larguras dos chunks que o compõem, e
-    /// o branco do fim foi medido como um chunk próprio, no mesmo estilo. E ele é quase sempre UM
-    /// espaço — uma entrada só no cache de medição, reusada por toda linha do documento.
-    /// </para>
-    /// </remarks>
-    private static double InkEndPt(LaidOutLine line, ITextMeasurer measurer)
-    {
-        var last = line.Runs[^1];
-        var text = last.Text.AsSpan();
-        var ink = text.TrimEnd();
-
-        return ink.Length == text.Length
-            ? last.XPt + last.WidthPt
-            : last.XPt + last.WidthPt - measurer.MeasureWidthPt(text[ink.Length..], last.Style);
     }
 
     /// <summary>A mesma linha, deslocada para a direita. Nenhum run é partido.</summary>
