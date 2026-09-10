@@ -116,6 +116,8 @@ public static class LayoutBenchmark
         output.WriteLine($"tecla, reflow total : {parse + layout:N1} ms");
         output.WriteLine($"tecla, incremental  : {Keystroke(source, cache):N1} ms");
         output.WriteLine(string.Empty);
+        WriteKeystrokeTable(output);
+
         output.WriteLine($"medições largura    : {counting.WidthCalls:N0}");
         output.WriteLine($"  distintas         : {counting.DistinctWidths:N0}");
         output.WriteLine($"  repetidas         : {1.0 - ((double)counting.DistinctWidths / counting.WidthCalls):P1} (teto do cache)");
@@ -210,7 +212,175 @@ public static class LayoutBenchmark
             Directory.CreateDirectory(directory);
         }
 
-        File.WriteAllText(path, BuildDocument(Paragraphs, WordsPerParagraph));
+        // Com marcação: é o documento que o aplicativo tem de aguentar, e é nele que a conferência
+        // à mão vale alguma coisa. Um corpus de prosa lisa não exercita nada do que a Fase 6 pôs
+        // no motor.
+        File.WriteAllText(path, BuildDocument(Paragraphs, WordsPerParagraph, markup: true));
+    }
+
+    /// <summary>
+    /// O custo de uma tecla nas quatro configurações que existem, e nos três lugares onde o autor
+    /// digita.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>É a medição que faltava, e a ausência dela custou uma entrega.</b> O número publicado no
+    /// roadmap saía do preset do MVP — alinhado à esquerda — sobre um corpus de prosa lisa, medindo
+    /// <i>uma</i> tecla no meio de um parágrafo. O aplicativo roda o preset da ABNT, justificado,
+    /// sobre texto com marcação, e quem escreve digita no <b>fim</b> do parágrafo o tempo todo.
+    /// Três diferenças, e cada uma esconde um caminho diferente do reflow incremental.
+    /// </para>
+    /// <para>
+    /// <b>Rajada encadeada, e não uma tecla isolada:</b> o layout de cada tecla alimenta a
+    /// seguinte, que é o que acontece de verdade. Uma medição isolada sempre parte de um estado
+    /// recém-paginado, e por isso nunca revela um reuso que passa a recusar a partir da segunda
+    /// tecla.
+    /// </para>
+    /// </remarks>
+    private static void WriteKeystrokeTable(TextWriter output)
+    {
+        const int Keys = 10;
+
+        (string Label, TypographyPreset Preset, bool Markup)[] configurations =
+        [
+            ("Default, liso    ", TypographyPreset.Default, false),
+            ("Default, marcado ", TypographyPreset.Default, true),
+            ("ABNT, liso       ", TypographyPreset.Abnt, false),
+            ("ABNT, marcado    ", TypographyPreset.Abnt, true),
+        ];
+
+        output.WriteLine($"ms por tecla numa rajada de {Keys} (melhor de 3)");
+        output.WriteLine("                      começo      meio   fim de parágrafo      seta");
+
+        foreach (var (label, preset, markup) in configurations)
+        {
+            var source = BuildDocument(Paragraphs, WordsPerParagraph, markup);
+
+            var start = Burst(source, preset, InsideLine(source, 0.05), Keys);
+            var middle = Burst(source, preset, InsideLine(source, 0.50), Keys);
+            var lineEnd = Burst(source, preset, EndOfLine(source, 0.50), Keys);
+            var arrow = Traversal(source, preset, InsideLine(source, 0.50), Keys);
+
+            output.WriteLine($"{label} : {start,8:N1}  {middle,8:N1}  {lineEnd,11:N1}  {arrow,8:N1}");
+        }
+
+        output.WriteLine(string.Empty);
+    }
+
+    /// <summary>Milissegundos por tecla, encadeando o layout de uma no reuso da seguinte.</summary>
+    private static double Burst(string source, TypographyPreset preset, int caretAt, int keys)
+    {
+        // O cache é compartilhado entre as tentativas de propósito: quente é o estado em que o
+        // aplicativo está enquanto se escreve, e é esse o custo que interessa.
+        var measurer = new CachingTextMeasurer(new AvaloniaTextMeasurer());
+        var best = double.MaxValue;
+
+        for (var attempt = 0; attempt < 4; attempt++)
+        {
+            var text = source;
+            var caret = caretAt;
+
+            var document = LayoutEngine.Layout(
+                MarkupParser.Parse(text, preset), PageSettings.A4, measurer, caret, preset: preset);
+
+            var stopwatch = Stopwatch.StartNew();
+
+            for (var key = 0; key < keys; key++)
+            {
+                var edited = text.Insert(caret, "x");
+                var reuse = LayoutReuse.Between(text, edited, document);
+
+                // O caret pós-edição, que é a convenção do EditorViewModel: ele move o caret ao
+                // inserir e só depois pede a repaginação.
+                caret++;
+
+                document = LayoutEngine.Layout(
+                    MarkupParser.Parse(edited, preset), PageSettings.A4, measurer, caret, reuse, preset);
+
+                text = edited;
+            }
+
+            stopwatch.Stop();
+
+            // A primeira passada paga JIT e o aquecimento do cache de medição.
+            if (attempt > 0)
+            {
+                best = Math.Min(best, stopwatch.Elapsed.TotalMilliseconds / keys);
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>
+    /// O custo de uma seta que atravessa blocos: o texto não muda, só a marcação revelada.
+    /// </summary>
+    /// <remarks>
+    /// Uma coluna própria porque é um caminho próprio do reflow, e porque num editor em que uma
+    /// linha da fonte é uma linha na página, <b>cada ↑/↓ atravessa um bloco</b>.
+    /// </remarks>
+    private static double Traversal(string source, TypographyPreset preset, int caretAt, int steps)
+    {
+        var measurer = new CachingTextMeasurer(new AvaloniaTextMeasurer());
+        var best = double.MaxValue;
+
+        for (var attempt = 0; attempt < 4; attempt++)
+        {
+            var caret = caretAt;
+
+            var document = LayoutEngine.Layout(
+                MarkupParser.Parse(source, preset), PageSettings.A4, measurer, caret, preset: preset);
+
+            var stopwatch = Stopwatch.StartNew();
+
+            for (var step = 0; step < steps; step++)
+            {
+                var newline = source.IndexOf('\n', caret);
+                caret = newline < 0 || newline + 1 >= source.Length ? caretAt : newline + 1;
+
+                document = LayoutEngine.Layout(
+                    MarkupParser.Parse(source, preset),
+                    PageSettings.A4,
+                    measurer,
+                    caret,
+                    LayoutReuse.Between(source, source, document),
+                    preset);
+            }
+
+            stopwatch.Stop();
+
+            if (attempt > 0)
+            {
+                best = Math.Min(best, stopwatch.Elapsed.TotalMilliseconds / steps);
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>Um offset dentro de uma linha de texto, nunca em cima de um <c>\n</c>.</summary>
+    /// <remarks>
+    /// Inserir sobre a quebra é outro caso: o reflow incremental o recusa de propósito, porque um
+    /// <c>\n</c> criado ou apagado muda quantos blocos existem.
+    /// </remarks>
+    private static int InsideLine(string source, double fraction)
+    {
+        var at = Math.Clamp((int)(source.Length * fraction), 1, source.Length - 1);
+
+        while (at < source.Length - 1 && (source[at] == '\n' || source[at - 1] == '\n'))
+        {
+            at++;
+        }
+
+        return at;
+    }
+
+    /// <summary>O fim da linha em que aquele offset cai — onde a guarda do caret decide.</summary>
+    private static int EndOfLine(string source, double fraction)
+    {
+        var newline = source.IndexOf('\n', InsideLine(source, fraction));
+
+        return newline < 0 ? source.Length : newline;
     }
 
     /// <summary>
@@ -262,12 +432,24 @@ public static class LayoutBenchmark
     /// Parágrafos separados por linha em branco — a forma que o autor escreve e a que o parser vê:
     /// uma linha de fonte por parágrafo, quebrada pela largura da página.
     /// </summary>
-    private static string BuildDocument(int paragraphs, int wordsPerParagraph)
+    /// <param name="markup">
+    /// Salpica o documento com a marcação que o aplicativo suporta — <c>**negrito**</c>,
+    /// <c>*itálico*</c>, <c>$fórmula$</c>, <c>[^nota]</c> e blocos <c>:-:</c>.
+    /// </param>
+    /// <remarks>
+    /// <b>A marcação é opcional para que os números antigos continuem comparáveis</b>, e existe
+    /// porque sem ela este corpus mede um documento que ninguém escreve. Os sorteios extras ficam
+    /// todos dentro do <c>if</c>: com <paramref name="markup"/> falso a sequência do
+    /// <see cref="Random"/> é caractere por caractere a mesma de antes, e o corpus histórico não
+    /// muda.
+    /// </remarks>
+    private static string BuildDocument(int paragraphs, int wordsPerParagraph, bool markup = false)
     {
         var random = new Random(Seed);
         var vocabulary = BuildVocabulary(random);
         var zipf = BuildZipfTable(vocabulary.Length);
         var builder = new StringBuilder();
+        var note = 0;
 
         for (var paragraph = 0; paragraph < paragraphs; paragraph++)
         {
@@ -284,10 +466,47 @@ public static class LayoutBenchmark
                 builder.Append('\n');
             }
 
+            // Um bloco alinhado a cada vinte: é o "RESUMO" centralizado e a epígrafe à direita que
+            // uma tese tem, e é o caminho em que a linha é reposicionada depois de quebrada.
+            if (markup && paragraph % 20 == 19)
+            {
+                builder.Append(paragraph % 40 == 19 ? ":-: " : "-: ");
+            }
+
             for (var index = 0; index < wordsPerParagraph; index++)
             {
-                builder.Append(vocabulary[SampleRank(zipf, random.NextDouble())]);
+                var word = vocabulary[SampleRank(zipf, random.NextDouble())];
+
+                if (markup)
+                {
+                    // ~2% das palavras enfatizadas. Mais do que isso não é prosa acadêmica, é
+                    // demonstração de marcação — e o custo por linha é o que se quer medir.
+                    var draw = random.NextDouble();
+
+                    word = draw switch
+                    {
+                        < 0.012 => $"**{word}**",
+                        < 0.020 => $"*{word}*",
+                        _ => word,
+                    };
+                }
+
+                builder.Append(word);
                 builder.Append(index == wordsPerParagraph - 1 ? '\n' : ' ');
+            }
+
+            if (markup)
+            {
+                // Fórmula e chamada de nota entram no fim do parágrafo, que é onde o autor as põe.
+                if (paragraph % 10 == 3)
+                {
+                    builder.Insert(builder.Length - 1, " $E = mc^2$");
+                }
+
+                if (paragraph % 6 == 1)
+                {
+                    builder.Insert(builder.Length - 1, $"[^{++note}]");
+                }
             }
 
             builder.Append('\n');
