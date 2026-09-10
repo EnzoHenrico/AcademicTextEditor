@@ -121,9 +121,78 @@ public static class LineBreaker
         // aberto ocupam uma linha na página, e o caret precisa de uma linha onde pousar.
         builder.EndLine();
 
+        ClaimHiddenGaps(builder.Lines, runs);
+
         LineAlignment.Apply(builder.Lines, alignment, maxWidthPt, measurer);
 
         return builder.Lines;
+    }
+
+    /// <summary>
+    /// As linhas do bloco passam a cobri-lo <b>inteiro</b>, sem buraco onde a marcação escondida
+    /// não pôs run nenhum.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>O mapa offset → linha tem de ser total, e não era.</b> Com a marcação escondida os runs
+    /// dela são descartados em <see cref="BuildChunks"/>, e cada linha nascia ancorada no primeiro
+    /// chunk que de fato usou. Num bloco que começa com <c>#&#160;</c>, <c>:-:&#160;</c> ou
+    /// <c>**negrito**</c>, os primeiros offsets do bloco não pertenciam a linha nenhuma — e quem
+    /// procura a linha de um offset descoberto acha a <b>última linha do bloco anterior</b>. O
+    /// caret era desenhado no parágrafo de cima, longe de onde se errou.
+    /// </para>
+    /// <para>
+    /// <b>O buraco não é só das pontas.</b> Quando a quebra por largura cai em cima de uma marcação
+    /// escondida no meio do bloco, a linha de cima termina antes dela e a de baixo começa depois:
+    /// o vão fica no meio do parágrafo. Daí a regra ser uma só — <i>cada linha reivindica para trás
+    /// até onde a anterior terminou</i>, e a primeira até o começo do bloco.
+    /// </para>
+    /// <para>
+    /// Reivindicar para trás, e não para a frente, tem consequência e ela é desejável: a fronteira
+    /// entre as duas linhas passa a ser <b>compartilhada</b>, exatamente como numa quebra por
+    /// largura comum, e a <c>CaretAffinity</c> já sabe desempatar. E o offset da marcação de uma
+    /// palavra fica com a linha em que a palavra está.
+    /// </para>
+    /// <para>
+    /// As pontas do bloco saem dos próprios runs, e não de um parâmetro novo: a invariante do
+    /// <see cref="InlineRun"/> é que todo caractere do bloco entra em exatamente um run, na ordem.
+    /// </para>
+    /// </remarks>
+    private static void ClaimHiddenGaps(List<LaidOutLine> lines, IReadOnlyList<InlineRun> runs)
+    {
+        if (lines.Count == 0 || runs.Count == 0)
+        {
+            return;
+        }
+
+        var previousEnd = runs[0].SourceStart;
+
+        for (var index = 0; index < lines.Count; index++)
+        {
+            var line = lines[index];
+
+            if (line.SourceStart > previousEnd)
+            {
+                line = line with
+                {
+                    SourceStart = previousEnd,
+                    SourceLength = line.SourceEnd - previousEnd,
+                };
+
+                lines[index] = line;
+            }
+
+            previousEnd = line.SourceEnd;
+        }
+
+        // A última também para a frente: um bloco terminado em "**" tem os dois últimos offsets
+        // depois do último chunk desenhado.
+        var last = lines[^1];
+
+        if (last.SourceEnd < runs[^1].SourceEnd)
+        {
+            lines[^1] = last with { SourceLength = runs[^1].SourceEnd - last.SourceStart };
+        }
     }
 
     /// <summary>

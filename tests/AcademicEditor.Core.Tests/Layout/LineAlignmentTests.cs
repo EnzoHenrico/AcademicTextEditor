@@ -148,6 +148,32 @@ public sealed class LineAlignmentTests
         MarginInvariants.AssertHolds(
             Break(text, alignment), MaxWidthPt, Measurer, Measurer.CharWidthPt);
 
+    /// <summary>
+    /// Numa linha justificada, o caret entre duas palavras encosta na palavra <b>seguinte</b>.
+    /// </summary>
+    /// <remarks>
+    /// O run de branco carrega a sobra da justificação dentro da própria <c>WidthPt</c>, mas
+    /// <c>ColumnPt</c> mede o texto — um espaço. Terminar no run do branco deixava o caret um vão
+    /// inteiro atrás da palavra que ele deveria preceder. Com a sobra normal isso é fração de
+    /// ponto; era visível porque a margem furada da Fatia 4 inflava a sobra.
+    /// </remarks>
+    [Fact]
+    public void O_caret_entre_palavras_encosta_na_palavra_seguinte()
+    {
+        var first = Break("ab cd ef ghijklmno", TextAlignment.Justify)[0];
+
+        // Os segmentos ficam em 0, 20, 40, 60, 80: o branco em 20 tem 20pt de largura (10 medidos
+        // mais 10 de sobra), e o offset 3 é o começo de "cd".
+        var blank = first.Runs[1];
+        var word = first.Runs[2];
+
+        Assert.Equal(" ", blank.Text);
+        Assert.Equal("cd", word.Text);
+        Assert.Equal(blank.SourceEnd, word.SourceStart);
+
+        Assert.Equal(word.XPt, CaretGeometry.ColumnPt(first, word.SourceStart, Measurer), precision: 9);
+    }
+
     public static TheoryData<string, TextAlignment> TodoAlinhamentoDeCadaTexto()
     {
         string[] texts =

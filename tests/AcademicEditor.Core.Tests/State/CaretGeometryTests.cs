@@ -125,6 +125,60 @@ public sealed class CaretGeometryTests
         Assert.False(CaretGeometry.IsSharedBoundary(4, Layout("aaa\nbbb")));
     }
 
+    /// <summary>
+    /// <b>Todo offset do documento pertence a uma linha, e à linha certa.</b>
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A garantia que faltava, e cuja ausência era o bug "o cursor se perde". Com a marcação
+    /// escondida os runs dela somem, e a linha nascia ancorada no primeiro chunk que de fato usava:
+    /// num bloco que começa com <c>#&#160;</c>, <c>:-:&#160;</c> ou <c>**negrito**</c>, os
+    /// primeiros offsets do bloco não pertenciam a linha nenhuma. Quem procura a linha de um
+    /// offset descoberto recebe a <b>última linha do bloco anterior</b> — e o caret é desenhado no
+    /// parágrafo de cima, longe de onde se errou.
+    /// </para>
+    /// <para>
+    /// Teste de propriedade e não de exemplo, porque o buraco muda de lugar a cada marcação nova:
+    /// a Fatia 4 levou o prefixo a quatro caracteres com o <c>:-:&#160;</c>, e a 5a acrescentou
+    /// fronteiras desse tipo no meio da linha.
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [InlineData("# Titulo\n\ncorpo comum")]
+    [InlineData("**negrito** no comeco\n\ncorpo")]
+    [InlineData(":-: centralizado\n\ncorpo")]
+    [InlineData(":-: # Titulo centralizado\n\ncorpo")]
+    [InlineData("corpo\n\ntexto com **negrito** no meio\n\nfim")]
+    [InlineData("corpo\n\ntermina em **negrito**\n\nfim")]
+    [InlineData("nota[^1] e formula $E=mc^2$\n\ncorpo")]
+    [InlineData("## \n\ncorpo")]
+    [InlineData("a\n\n\n\nb")]
+    public void Todo_offset_do_documento_pertence_a_uma_linha(string source)
+    {
+        // Sem caret: é a configuração em que TODA marcação está escondida, e portanto a que tem
+        // mais offsets sem run. Com o caret dentro de um bloco aquele bloco é revelado, e o
+        // problema encolhe — foi o que o manteve invisível.
+        var document = LayoutEngine.Layout(MarkupParser.Parse(source), Settings, Measurer, caretOffset: -1);
+
+        for (var offset = 0; offset <= source.Length; offset++)
+        {
+            var covering = document.Pages
+                .SelectMany((page, index) => page.Lines.Select(line => (Page: index, Line: line)))
+                .Where(found => offset >= found.Line.SourceStart && offset <= found.Line.SourceEnd)
+                .ToArray();
+
+            Assert.True(
+                covering.Length > 0,
+                $"o offset {offset} de '{source}' não pertence a linha nenhuma");
+
+            // E o caret vai parar numa delas. Sem cobertura, ele era desenhado na última linha do
+            // bloco ANTERIOR — que é o sintoma como o autor o vê.
+            var landed = CaretGeometry.Locate(offset, document, Measurer);
+
+            Assert.Contains(landed.PageIndex, covering.Select(found => found.Page));
+        }
+    }
+
     private static PaginatedDocument Layout(string source) =>
         LayoutEngine.Layout(MarkupParser.Parse(source), Settings, Measurer);
 
