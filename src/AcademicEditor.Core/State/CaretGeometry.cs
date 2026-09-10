@@ -161,42 +161,13 @@ public static class CaretGeometry
     /// documento sem linha alguma.
     /// </summary>
     /// <remarks>
-    /// <b>Busca binária sobre o índice em ordem de fonte</b>, e não mais varredura das folhas. A
-    /// varredura custava proporcional ao que existia antes do caret, e — o que importa mais —
-    /// dependia de as linhas estarem em ordem de fonte <i>dentro</i> das folhas, premissa que a
-    /// nota de rodapé quebra: ela é desenhada na folha da chamada e escrita onde o autor quis.
+    /// <b>Busca binária sobre o índice em ordem de fonte</b>, e não varredura das folhas: aquela
+    /// custava proporcional ao que existia antes do caret e — o que importa mais — dependia de as
+    /// linhas estarem em ordem de fonte <i>dentro</i> das folhas. A conta mora no
+    /// <see cref="PaginatedDocument"/>, que é onde o índice mora; aqui fica só a pergunta do caret.
     /// </remarks>
-    private static int FindIndex(int offset, PaginatedDocument document)
-    {
-        var index = document.Index;
-
-        if (index.Count == 0)
-        {
-            return -1;
-        }
-
-        var low = 0;
-        var high = index.Count - 1;
-        var best = -1;
-
-        while (low <= high)
-        {
-            var mid = low + ((high - low) / 2);
-
-            if (index[mid].SourceStart <= offset)
-            {
-                best = mid;
-                low = mid + 1;
-            }
-            else
-            {
-                high = mid - 1;
-            }
-        }
-
-        // Offset antes da primeira linha do documento — nada o cobre, e o caret pousa nela.
-        return best < 0 ? 0 : best;
-    }
+    private static int FindIndex(int offset, PaginatedDocument document) =>
+        document.FindLineIndex(offset);
 
     // A linha achada começa exatamente onde a anterior terminou? Então o offset serve às duas, e
     // quem escolhe é a afinidade. Só acontece em quebra por largura: numa quebra explícita o \n
@@ -213,39 +184,58 @@ public static class CaretGeometry
             ? position - 1
             : position;
 
+    /// <remarks>
+    /// Duas coisas são puladas, e por motivos diferentes. <b>Página vazia</b> — que uma quebra
+    /// explícita dupla produz — não tem onde pousar. <b>Linha gerada</b> — a entrada de sumário —
+    /// não tem offset nenhum: parar nela daria ao caret uma posição que o buffer não tem, e é
+    /// exatamente a falha de offset que não quebra o desenho e quebra o caret.
+    /// </remarks>
     internal static (int PageIndex, int LineIndex) PreviousLine(PaginatedDocument document, int page, int line)
     {
-        if (line > 0)
-        {
-            return (page, line - 1);
-        }
+        var candidatePage = page;
+        var candidateLine = line - 1;
 
-        // Páginas vazias existem — uma quebra explícita dupla produz uma folha em branco — e a
-        // navegação passa por cima delas em vez de parar numa página sem onde pousar.
-        for (var candidate = page - 1; candidate >= 0; candidate--)
+        while (candidatePage >= 0)
         {
-            if (document.Pages[candidate].Lines.Count > 0)
+            if (candidateLine < 0)
             {
-                return (candidate, document.Pages[candidate].Lines.Count - 1);
+                candidatePage--;
+                candidateLine = candidatePage >= 0 ? document.Pages[candidatePage].Lines.Count - 1 : 0;
+                continue;
             }
+
+            if (!document.Pages[candidatePage].Lines[candidateLine].IsGenerated)
+            {
+                return (candidatePage, candidateLine);
+            }
+
+            candidateLine--;
         }
 
         return (-1, -1);
     }
 
+    /// <inheritdoc cref="PreviousLine"/>
     internal static (int PageIndex, int LineIndex) NextLine(PaginatedDocument document, int page, int line)
     {
-        if (line + 1 < document.Pages[page].Lines.Count)
-        {
-            return (page, line + 1);
-        }
+        var candidatePage = page;
+        var candidateLine = line + 1;
 
-        for (var candidate = page + 1; candidate < document.Pages.Count; candidate++)
+        while (candidatePage < document.Pages.Count)
         {
-            if (document.Pages[candidate].Lines.Count > 0)
+            if (candidateLine >= document.Pages[candidatePage].Lines.Count)
             {
-                return (candidate, 0);
+                candidatePage++;
+                candidateLine = 0;
+                continue;
             }
+
+            if (!document.Pages[candidatePage].Lines[candidateLine].IsGenerated)
+            {
+                return (candidatePage, candidateLine);
+            }
+
+            candidateLine++;
         }
 
         return (-1, -1);

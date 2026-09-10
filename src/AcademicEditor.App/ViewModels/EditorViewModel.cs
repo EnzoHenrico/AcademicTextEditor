@@ -804,20 +804,22 @@ public sealed class EditorViewModel
                 var laidOut = await Task.Run(() =>
                 {
                     var source = snapshot.GetText();
+                    var ast = MarkupParser.Parse(source, typography);
 
-                    var paginated = LayoutEngine.Layout(
-                        MarkupParser.Parse(source, typography),
-                        settings,
-                        _measurer,
-                        caretOffset,
-                        LayoutReuse.Between(published.Source, source, published.Document),
-                        typography);
-
-                    // As faixas são um passe sobre o resultado: só assim o {pages} sabe quantas
-                    // folhas existem, e é por isso que elas não influenciam a paginação.
+                    // Paginar, preencher o sumário e montar as faixas são três passes com uma
+                    // ordem obrigatória, e quem a conhece é o LayoutEngine: montá-la aqui seria a
+                    // segunda cópia dela — a primeira coisa a divergir no dia em que entrar um
+                    // quarto passe.
                     return (
                         Source: source,
-                        Document: PageBands.Apply(paginated, bands, _measurer),
+                        Document: LayoutEngine.Publish(
+                            ast,
+                            settings,
+                            _measurer,
+                            bands,
+                            caretOffset,
+                            LayoutReuse.Between(published.Source, source, published.Document),
+                            typography),
 
                         // Contar aqui é de graça: a fonte inteira já está materializada para o
                         // parser, e a varredura é uma passada sem alocar. Na UI thread, a cada

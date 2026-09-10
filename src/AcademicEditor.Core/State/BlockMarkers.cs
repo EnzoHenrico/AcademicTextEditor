@@ -93,7 +93,7 @@ public static class BlockMarkers
     private static IEnumerable<LaidOutLine> Markers(PaginatedDocument document) =>
         document.Pages
             .SelectMany(page => page.Lines)
-            .Where(line => line.Kind == LineKind.PageBreak);
+            .Where(line => line.Kind is LineKind.PageBreak or LineKind.TableOfContents);
 
     // O marcador mais o '\n' que o isola. É o '\n' que o Backspace miraria, e apagá-lo sozinho é
     // o que fundiria o marcador com o texto de cima.

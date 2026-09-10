@@ -8,7 +8,14 @@ namespace AcademicEditor.Core.Parsing;
 public static class MarkupTokenizer
 {
     /// <summary>Marcador de quebra de página explícita, sozinho numa linha.</summary>
-    public const string PageBreakMarker = "\\page";
+    /// <remarks>
+    /// A forma escrita da tag, para quem monta texto. Quem <b>reconhece</b> uma tag é o
+    /// <see cref="BlockTags"/>, e é lá que a regra mora.
+    /// </remarks>
+    public const string PageBreakMarker = "\\" + BlockTags.PageBreak;
+
+    /// <summary>Marcador de sumário automático, sozinho numa linha.</summary>
+    public const string TableOfContentsMarker = "\\" + BlockTags.TableOfContents;
 
     /// <summary>Marcação de alinhamento, no início da linha e seguida de espaço.</summary>
     /// <remarks>
@@ -68,9 +75,20 @@ public static class MarkupTokenizer
             return new MarkupToken(MarkupTokenKind.BlankLine, lineStart, lineLength, lineStart, Level: 0);
         }
 
-        if (line.Trim().SequenceEqual(PageBreakMarker))
+        // Uma tag desconhecida não é marcador: cai adiante e vira texto, visível na folha. É o que
+        // faz um "\pgae" digitado por engano aparecer em vez de sumir.
+        if (BlockTags.TryRead(line, out var tag))
         {
-            return new MarkupToken(MarkupTokenKind.PageBreak, lineStart, lineLength, lineStart, Level: 0);
+            if (tag.SequenceEqual(BlockTags.PageBreak))
+            {
+                return new MarkupToken(MarkupTokenKind.PageBreak, lineStart, lineLength, lineStart, Level: 0);
+            }
+
+            if (tag.SequenceEqual(BlockTags.TableOfContents))
+            {
+                return new MarkupToken(
+                    MarkupTokenKind.TableOfContents, lineStart, lineLength, lineStart, Level: 0);
+            }
         }
 
         // O alinhamento é lido ANTES do resto porque modifica a linha inteira, e o que sobra depois

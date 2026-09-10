@@ -950,14 +950,28 @@ Registrado desta fatia:
 **Objetivo:** o que sai do editor passa a ser um trabalho acadêmico, e não um texto paginado —
 folha numerada, tipografia de norma, PDF, e as extensões de markup que uma tese usa.
 
-Treze fatias, nenhuma com mais de três tópicos — eram sete. A 5 se partiu ao ser desenhada, porque
+Catorze fatias, nenhuma com mais de três tópicos — eram sete. A 5 se partiu ao ser desenhada, porque
 cada metade abaixo da marcação inline precisa de uma capacidade que o motor não tem, e são
-capacidades diferentes; quatro entraram depois **como correção** (4.1, 4.2, 4.3 e 5a.1); e a nota de
+capacidades diferentes; quatro entraram depois **como correção** (4.1, 4.2, 4.3 e 5a.1); a 6.1
+entrou por decisão de produto; e a nota de
 rodapé saiu para o estacionamento de ideias depois de duas entregas recusadas. A ordem tem duas dependências reais e o resto é independente: a Fatia 2 precisa do preset da Fatia 1 para saber com que fonte desenhar o
 cabeçalho, e a Fatia 7 é a última porque um menu só oferece o que já existe. **O PDF vem logo
 depois do cabeçalho de propósito:** ele é a prova da aposta que abriu o projeto — o motor de
 layout nasceu independente de tela —, e deixá-lo para o fim seria descobrir no fim se ela valia.
 Notas de rodapé e sumário fluem para dentro dele depois, sem tocá-lo.
+
+**A ordem de entrega não é a ordem dos números**, e é deliberada: a 6 veio antes da 5c porque aquela
+mexe na invariante mais frágil do motor (`Text[i] ↔ SourceStart + i`, 82 usos de offset em 14
+arquivos) e o desenho de produto dela tinha um buraco — de onde vem o `.bib`. A 6.1 fecha esse
+buraco, e só então a 5c faz sentido. **Fica:** 1 → 2 → 3 → 4 → 5a → 5b → 6 → 6.1 → 5c → 7.
+
+**Devidos da fase**, cada um registrado na fatia que o encontrou e nenhum deles item de outra:
+
+- **`PageSettings` da ABNT** — 3cm à esquerda e no topo, 2cm à direita e embaixo. O aplicativo roda
+  o preset tipográfico da norma sobre `PageSettings.A4`, que tem margens de 1" uniformes. Mudar
+  margem move **toda** quebra de página do documento, então é decisão própria (Fatia 2)
+- **Título justificado no preset da ABNT** — o alinhamento padrão do preset vale para todo bloco, e
+  a norma alinha título à esquerda. É visível na primeira folha de qualquer documento (Fatia 6)
 
 > **A primeira entrega da 5b foi recusada, e as quatro fatias corretivas saíram daí.** A PR #6 tinha
 > o gate verde e o aplicativo quebrado em dois pontos que aparecem em menos de um minuto de digitação real:
@@ -1572,18 +1586,127 @@ caret sai do bloco) ou é texto (fica sempre). A citação resolvida pede o inve
 que aparece **só quando a marcação está escondida** — revelado, o autor vê `[@silva2020]`; escondido,
 vê `(Silva, 2020)`. O `IsMarkup` booleano vira três estados.
 
-### Fatia 6 — Sumário automático ⬜
+### Fatia 6 — Sumário automático ✅
 
-- [ ] `\toc` como marcador de bloco, reusando o que o `\page` já construiu
-- [ ] Dois passes de layout, com o número de passes **fixo**
+- [x] `\toc` como marcador de bloco, reusando o que o `\page` já construiu
+- [x] Dois passes de layout, com o número de passes **fixo** — e **sem o erro de uma folha** que o
+      item previa: ver abaixo
+- [x] **A regra de tags de bloco**, que não estava na lista: o `\toc` seria o segundo `if` no
+      tokenizer e a cópia dele no `BlockAlignment` já era o terceiro
+- [x] **`--screenshot`**, que também não estava: a conferência visual que faltava desde a Fatia 1
 
 **`\toc` reusa `BlockMarkers` e o caminho do `PageBreakNode` inteiro:** linha atômica desenhada,
 caret que pousa nela como unidade, teclas de apagar que removem o marcador inteiro. Nada disso
-precisa ser escrito de novo.
+precisou ser escrito de novo — `BlockMarkers` passou a perguntar pelo `LineKind` ser de marcador em
+vez de ser quebra de página, e o resto veio junto.
 
-**Mesmo ponto fixo das notas:** inserir o sumário empurra o texto e muda os números de página que o
-próprio sumário mostra. Dois passes, e aceitar o erro de uma página quando ele acontecer —
-perseguir o ponto fixo é um laço que pode não terminar, num caminho que roda a cada tecla.
+**O ponto fixo não existe, e é a decisão de fundo da fatia.** O item previa dois passes e um erro de
+uma folha, pela mesma razão das notas: inserir o sumário empurra o texto e muda os números que o
+próprio sumário mostra. Só que **quantas entradas existem e quantas linhas cada uma ocupa sai da AST,
+antes de qualquer linha ser assentada** — é a mesma descoberta que a nota de rodapé deixou registrada
+no estacionamento. O que falta depois de paginar é só o número, e para que escrevê-lo não requebre
+nada a **coluna dele tem largura reservada fixa**, de quatro dígitos. Sem a reserva, um título na
+fronteira da quebra enrolaria ao passar de `9` para `100`, mudaria a contagem de linhas do sumário e
+moveria as folhas que o número descreve. Com ela, o segundo passe é puro texto — exatamente o
+`{pages}` do cabeçalho da Fatia 2.
+
+**As entradas não têm posição na fonte, e não podem nem fingir ter.** É a forma forte da decisão do
+`BandRun`, um nível adiante: a faixa mora fora de `PageLayout.Lines`, mas a entrada de sumário
+**ocupa espaço no fluxo** e tem de morar dentro. Isso só é possível porque a Fatia 5b separou ordem
+de desenho de ordem de fonte — `Lines` é desenho, `Index` é fonte, e a entrada entra no primeiro e
+fica fora do segundo. `LaidOutLine.IsGenerated` é o nome dessa distinção, e o `BuildIndex`, o
+`PreviousLine`/`NextLine`, o `AtPoint` e a seleção a respeitam cada um por seu lado.
+
+**Medido** com `--measure-layout`, em Debug, preset da ABNT sobre o corpus **com** marcação — o
+mesmo de sempre, mais um `\toc` no começo, que é onde o autor o põe e é o pior caso. O corpus tem
+152 títulos, e o sumário deles ocupa 5 folhas: 554 folhas passam a 559.
+
+    ms por tecla            começo      meio   fim de parágrafo      seta
+    ABNT, marcado             20,8      20,0         19,5           13,4
+    ABNT, com sumário         23,6      20,3         20,7           17,5
+
+**O sumário custa de 0,3 a 4,1 ms por tecla**, e o custo é proporcional ao número de **títulos**, não
+ao tamanho do documento: as entradas são remontadas a cada publicação — é o que faz um título editado
+aparecer no sumário na mesma tecla —, e com o cache de medição por baixo cada uma dessas medições é
+busca em dicionário. O guard determinístico do Core conta isso sem cronômetro: a tecla custa **7**
+medições contra as **35** da paginação completa, e a conta fecha inteira (3 do bloco sujo, 4 do
+sumário).
+
+Registrado desta fatia:
+
+- **A recusa do reflow incremental que o plano previa não foi precisa, e o motivo é bom.** A ideia
+  era recusar quando o bloco sujo virasse ou deixasse de ser um título, porque isso muda a contagem
+  de entradas. Escrevendo, ficou claro que o laço do reaproveitamento passeia pelo **índice**, e as
+  entradas não estão nele: elas não são reaproveitadas nem podem ser — são **remontadas** toda vez,
+  a partir da AST corrente. Um título a mais ou a menos entra por construção, e o page breaker
+  reempilha as folhas como sempre fez
+- **O primeiro defeito que o `--screenshot` pegou foi dele mesmo**, e é o argumento da ferramenta
+  inteiro num caso: o sumário saiu na folha **sem número e sem condutor**, porque a captura montava
+  a sequência de passes por conta própria e eu havia ligado o segundo passe só no `EditorViewModel`.
+  O gate estava verde. A correção é `LayoutEngine.Publish` — um dono só para a ordem dos passes —, e
+  hoje a captura, o aplicativo e o banco de provas passam pela mesma porta
+- **`PaginatedDocument.FindLineIndex` é público porque agora há dois perguntadores**: o caret, para
+  saber onde pousar, e o sumário, para saber em que folha um título caiu. A busca binária estava
+  privada no `CaretGeometry`; copiá-la seria a sexta cópia de uma invariante do motor, que é
+  exatamente o que custou a Fatia 4.1
+- **O índice passou a ser cortado no fim.** Ele é dimensionado pelo total de linhas e as geradas não
+  entram, então o que sobrava seria `LineRef(0,0,0,0)` — offset zero, que a busca binária tomaria por
+  linha de verdade e que capturaria o caret no começo do documento. Cinco testes ficam vermelhos sem
+  o corte, incluindo o teste de propriedade da Fatia 5a.1
+- **Um teste passou verde afirmando metade da propriedade**, e foi pego sabotando o código de
+  propósito: "escrever os números não move folha nenhuma" continuava verde com a reserva do número
+  desligada, porque o `Apply` **recusa** quando as contagens não batem e devolve o documento intacto.
+  A asserção que faltava era a outra metade — que os números foram de fato escritos. Com ela, e com
+  um título de 26 caracteres na fronteira exata da quebra, o teste fica vermelho
+- **Todos os guards novos foram verificados vermelhos com a proteção desligada**, um a um: a exclusão
+  do índice, o corte do índice, o salto da linha gerada na navegação e no clique, e a reserva do
+  número
+- **Não há conferência interativa nesta máquina.** O que existe é o `--screenshot`, que desenha com o
+  `PageRenderer` de verdade, o medidor real e a `DocumentConfiguration` que o aplicativo executa —
+  conferidas assim a folha do sumário de um documento pequeno e a segunda folha do sumário da tese de
+  559 folhas, com números de três dígitos. Digitar, clicar e arrastar continuam sem conferência de
+  verdade, e continuam cobertos só por teste
+- **O item "espaço entre blocos" não voltou**, mas apareceu um parente: no preset da ABNT o
+  **título é justificado**, porque o alinhamento padrão do preset vale para todo bloco. A ABNT alinha
+  título à esquerda. É visível na primeira folha de qualquer documento, não é desta fatia, e vai para
+  a lista de devidos ao lado das margens de 3cm/2cm
+
+### Fatia 6.1 — Front matter de metadados ⬜
+
+Fatia nova, decidida em conversa e **entregue antes da 5c**, porque é ela que responde a pergunta que
+segurava aquela: **de onde vem o `.bib`**. Hoje o `{title}` do cabeçalho é o nome do arquivo, e
+preset, margens e faixas nascem fixos no `MainWindow` — nada disso sobrevive a fechar o app nem varia
+por documento.
+
+- [ ] `---` … `---` no topo do arquivo, YAML, subconjunto plano (`chave: valor` escalar)
+- [ ] `DocumentMetadata` no Core; o App lê e atribui a `Typography`, `Bands.DocumentTitle` e ao
+      caminho do `.bib`
+- [ ] Uma linha atômica de altura zero cobrindo `[0, K)`, pela máquina do `\page`
+
+**`---`, e não `\meta\` … `/meta/`.** A escolha é interoperabilidade contra coerência, e ganhou a
+primeira: Pandoc, Obsidian e Jekyll já leem e escondem front matter. Consequência aceita e registrada
+na Fatia 6: a forma pareada da gramática de tags fica **sem nenhum cliente**, e por isso está
+reservada por escrito e sem máquina.
+
+**Nunca visível — é lógica do Core que o App consulta.** As três propriedades que o metadado alimenta
+já têm setter que repagina, e o `LayoutEngine.Reuse` já recusa reaproveitar linhas medidas noutra
+fonte porque o `PaginatedDocument` carimba o preset desde a Fatia 1. **A metade cara está construída
+e guardada.**
+
+**A linha atômica de altura zero é o que mantém o mapa `offset → linha` total.** A invariante que a
+Fatia 5a.1 provou com teste de propriedade não é enfraquecida: `FindLine` de um offset do cabeçalho
+tem resposta definida, e é a navegação que nunca escolhe ir lá. O contrário — excluir o trecho do
+layout — trocaria "todo offset pertence a uma linha" por "todo offset do corpo", que é uma invariante
+mais fraca num lugar onde ela já custou caro.
+
+Três decisões que vão junto, e cada uma tem o seu teste:
+
+- **A fronteira é do `BlockMarkers`**: Backspace no primeiro offset do corpo não faz nada, como
+  Backspace no offset 0 hoje. Apagar o cabeçalho inteiro com uma tecla destruiria o metadado calado
+- **`Ctrl+A` seleciona o corpo**, e o contador de palavras começa em `K`
+- **Cuidado com o laço**: o App atribui `Typography` durante a publicação e o setter agenda
+  repaginação. A comparação por valor do record corta na segunda passada — para provar com teste,
+  não para supor
 
 ### Fatia 7 — Modal de configurações e menu ⬜
 

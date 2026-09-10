@@ -122,13 +122,33 @@ public static class CaretNavigator
         {
             if (yPt < lines[index].YPt + lines[index].HeightPt)
             {
-                return (page, index);
+                return Land(document, page, index);
             }
         }
 
         // Abaixo da última linha: a última. Acima da primeira o laço já devolve a primeira,
         // porque o topo dela é o topo da área de conteúdo.
-        return (page, lines.Count - 1);
+        return Land(document, page, lines.Count - 1);
+    }
+
+    /// <summary>
+    /// A linha onde o caret de fato pode pousar, partindo da que o ponto atingiu.
+    /// </summary>
+    /// <remarks>
+    /// Clicar numa entrada de sumário atinge uma linha <b>sem offset nenhum</b>. Para trás
+    /// primeiro, pela mesma razão da folha em branco: o caret pertence ao texto que veio antes, e
+    /// antes de toda entrada está o marcador <c>\toc</c>, que é o que o autor tem para editar.
+    /// </remarks>
+    private static (int PageIndex, int LineIndex) Land(PaginatedDocument document, int page, int line)
+    {
+        if (!document.Pages[page].Lines[line].IsGenerated)
+        {
+            return (page, line);
+        }
+
+        var previous = CaretGeometry.PreviousLine(document, page, line);
+
+        return previous.PageIndex >= 0 ? previous : CaretGeometry.NextLine(document, page, line);
     }
 
     public static Caret MoveLeft(Caret caret, PaginatedDocument document, ITextMeasurer measurer)

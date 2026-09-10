@@ -29,14 +29,6 @@ public partial class MainWindow : Window
     // depender da cultura da máquina faria o mesmo texto sair diferente em cada uma delas.
     private static readonly CultureInfo Numbers = CultureInfo.GetCultureInfo("pt-BR");
 
-    // A4 com uma faixa reservada no alto para o cabeçalho. 24pt ≈ 8,5mm: cabe a linha do número da
-    // página — corpo 12 mede cerca de 14pt de altura — com folga até a primeira linha do texto.
-    //
-    // A reserva mora aqui, junto do que vai ser escrito nela, porque as duas decisões são uma só:
-    // sem reserva o PageBands não desenha nada, e reserva sem texto é papel em branco. A geometria
-    // continua tendo um dono só, que é o PageSettings.
-    private static readonly PageSettings Page = PageSettings.A4 with { HeaderReservedHeightPt = 24.0 };
-
     private readonly EditorViewModel _viewModel;
     private readonly ShortcutDispatcher _shortcuts;
 
@@ -62,10 +54,10 @@ public partial class MainWindow : Window
         // repaginação de 300 páginas é medição de texto, e 96% dessas medições são repetição.
         _viewModel = new EditorViewModel(
             new CachingTextMeasurer(new AvaloniaTextMeasurer()),
-            Page,
+            DocumentConfiguration.Page,
             Assets.Samples.Text.UniqueFeaturesCrLf,
-            typography: TypographyPreset.Abnt,
-            bands: HeaderFooterSettings.Abnt);
+            typography: DocumentConfiguration.Typography,
+            bands: DocumentConfiguration.Bands);
 
         Surface.ViewModel = _viewModel;
         _viewModel.DocumentStateChanged += (_, _) => UpdateDocumentState();

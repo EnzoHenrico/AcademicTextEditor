@@ -52,6 +52,7 @@ public static class MarkupParser
             blocks.Add(token.Kind switch
             {
                 MarkupTokenKind.PageBreak => new PageBreakNode(token.LineStart, token.LineLength),
+                MarkupTokenKind.TableOfContents => new TocNode(token.LineStart, token.LineLength),
                 MarkupTokenKind.Heading => BuildHeading(source, token, typography),
 
                 // Texto e linha em branco são o mesmo bloco: a segunda é a primeira sem conteúdo.

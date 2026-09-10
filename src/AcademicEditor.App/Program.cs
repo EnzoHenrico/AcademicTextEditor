@@ -28,6 +28,24 @@ class Program
             return;
         }
 
+        // Conferência visual: grava uma folha como PNG, com o mesmo renderizador e a mesma
+        // configuração que o aplicativo executa. Precisa da plataforma inicializada pelo mesmo
+        // motivo das medições — o TextLayout depende do gerenciador de fontes.
+        if (args is ["--screenshot", var target, .. var rest])
+        {
+            BuildAvaloniaApp().SetupWithoutStarting();
+
+            var source = rest.FirstOrDefault(argument => !int.TryParse(argument, out _));
+            var page = rest
+                .Select(argument => int.TryParse(argument, out var number) ? number : 0)
+                .FirstOrDefault(number => number > 0);
+
+            var pages = Diagnostics.PageSnapshot.Capture(target, source, page == 0 ? 1 : page);
+
+            Console.WriteLine($"folha {(page == 0 ? 1 : page)} de {pages} em {Path.GetFullPath(target)}");
+            return;
+        }
+
         if (args is ["--write-corpus", var path])
         {
             Diagnostics.LayoutBenchmark.WriteCorpus(path);

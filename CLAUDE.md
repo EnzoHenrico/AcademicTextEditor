@@ -136,9 +136,22 @@ num exportador PDF/CLI depois. A única costura Core↔App é a interface `IText
   Sem isso existiriam posições no arquivo sem posição na tela, e o Enter no início de um título
   tirava a formatação do texto. A marcação sai com o mesmo estilo do bloco: revelar muda a largura
   da linha, nunca a altura. Custa uma repaginação por travessia de bloco.
-- **Marcadores de bloco (`\page`) são linhas atômicas.** Ocupam uma linha desenhada, o caret pousa
-  neles como unidade e as teclas de apagar removem o marcador inteiro — apagar só o `\n` que o
-  isola o transformaria em texto no meio da folha.
+- **Marcadores de bloco (`\page`, `\toc`) são linhas atômicas.** Ocupam uma linha desenhada, o caret
+  pousa neles como unidade e as teclas de apagar removem o marcador inteiro — apagar só o `\n` que o
+  isola o transformaria em texto no meio da folha. Quem reconhece um marcador é o `BlockTags`, e só
+  ele: a gramática é `\tag` sozinha numa linha, com `\tag\` … `/tag/` **reservada e sem máquina** até
+  aparecer um cliente. **Tag desconhecida é texto literal na folha** — `\meta` e `\meta\` diferem por
+  um caractere, e uma tag que sumisse deixaria o autor sem entender para onde foi o que digitou.
+- **Linha gerada não tem posição na fonte, e não pode nem fingir ter.** A entrada de sumário é
+  desenhada e ocupa espaço no fluxo, mas não corresponde a texto nenhum do buffer: ela entra em
+  `PageLayout.Lines` (ordem de desenho) e fica **fora** do `PaginatedDocument.Index` (ordem de fonte),
+  e a navegação, o clique e a seleção a atravessam sem parar. `LaidOutLine.IsGenerated` é o nome
+  disso. É a forma forte da mesma decisão do `BandRun`: um offset falso não quebra o desenho, quebra
+  o caret, longe de onde se errou.
+- **A ordem dos passes de publicação tem um dono: `LayoutEngine.Publish`.** Paginar, escrever os
+  números do sumário e montar cabeçalho e rodapé são três passes com ordem obrigatória — os dois
+  últimos dependem de já haver folha. Quem montar a sequência por fora acaba esquecendo um passe, e
+  o sintoma é o sumário sair sem número numa tela e com número noutra.
 - **Caret e navegação moram no Core** (`State/`), não no `PageSurface`. Mover o caret por
   linha/página exige consultar o `PaginatedDocument`, que é do Core; como função pura
   `(offset, PaginatedDocument) → offset`, isso é testável sem subsistema gráfico.

@@ -12,6 +12,18 @@ public enum LineKind
 
     /// <summary>Marcador de quebra de página. Desenhado como um filete, apagado inteiro.</summary>
     PageBreak,
+
+    /// <summary>Marcador de sumário. Como o de quebra de página: uma linha, apagado inteiro.</summary>
+    TableOfContents,
+
+    /// <summary>
+    /// Entrada do sumário: título, condutor de pontos e número da folha.
+    /// </summary>
+    /// <remarks>
+    /// <b>A única linha que não tem posição na fonte</b>, e é isso que a separa das outras três. Ver
+    /// <see cref="LaidOutLine.IsGenerated"/>.
+    /// </remarks>
+    TocEntry,
 }
 
 /// <summary>
@@ -36,4 +48,29 @@ public sealed record LaidOutLine(
     LineKind Kind = LineKind.Text)
 {
     public int SourceEnd => SourceStart + SourceLength;
+
+    /// <summary>
+    /// A linha foi <b>gerada</b> pelo motor e não corresponde a texto nenhum do buffer.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// É a forma forte da decisão que o <c>BandRun</c> já carrega: não basta a linha gerada não ter
+    /// offset, ela não pode nem <i>fingir</i> ter um. Um <see cref="SourceStart"/> falso mais cedo
+    /// ou mais tarde é consumido como conteúdo — e falha de offset não quebra o desenho, quebra o
+    /// caret, longe de onde se errou.
+    /// </para>
+    /// <para>
+    /// A diferença em relação à faixa de cabeçalho é que esta linha <b>ocupa espaço no fluxo</b>:
+    /// empurra o texto e mora em <c>PageLayout.Lines</c>. Isso só é possível porque a ordem de
+    /// desenho e a ordem de fonte são coisas separadas desde o índice — <c>Lines</c> é desenho,
+    /// <c>PaginatedDocument.Index</c> é fonte, e a linha gerada entra no primeiro e fica fora do
+    /// segundo.
+    /// </para>
+    /// <para>
+    /// <b>Não confundir com marcador.</b> Um <c>\page</c> é atômico mas <i>tem</i> offset: o caret
+    /// pousa nele como unidade e as teclas de apagar o removem inteiro. Uma linha gerada não tem
+    /// onde o caret pousar, e a navegação a atravessa sem parar.
+    /// </para>
+    /// </remarks>
+    public bool IsGenerated => Kind == LineKind.TocEntry;
 }

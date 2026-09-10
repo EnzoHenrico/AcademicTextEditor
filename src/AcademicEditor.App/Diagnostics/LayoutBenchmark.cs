@@ -52,6 +52,9 @@ public static class LayoutBenchmark
     // mesmo, não o ganho real.
     private const int VocabularySize = 12_000;
 
+    /// <summary>O marcador de sumário mais a linha em branco que o separa do texto.</summary>
+    private const string TocMarker = "\\toc\n\n";
+
     // Semente fixa: duas execuções têm de medir o mesmo documento, senão os números não comparam.
     private const int Seed = 20260908;
 
@@ -198,6 +201,17 @@ public static class LayoutBenchmark
     }
 
     /// <summary>
+    /// O documento de ~300 folhas com marcação, para quem precisa dele sem gravá-lo em disco.
+    /// </summary>
+    /// <remarks>
+    /// Com marcação por padrão: é o documento que o aplicativo tem de aguentar. Um corpus de prosa
+    /// lisa não exercita o negrito, a fórmula, a chamada de nota nem o bloco alinhado, que são
+    /// justamente os caminhos onde a Fase 6 mexeu.
+    /// </remarks>
+    internal static string Corpus(bool markup = true) =>
+        BuildDocument(Paragraphs, WordsPerParagraph, markup);
+
+    /// <summary>
     /// Grava o documento do benchmark num arquivo, para abri-lo no editor de verdade e sentir a
     /// latência em vez de só lê-la num número.
     /// </summary>
@@ -215,7 +229,7 @@ public static class LayoutBenchmark
         // Com marcação: é o documento que o aplicativo tem de aguentar, e é nele que a conferência
         // à mão vale alguma coisa. Um corpus de prosa lisa não exercita nada do que a Fase 6 pôs
         // no motor.
-        File.WriteAllText(path, BuildDocument(Paragraphs, WordsPerParagraph, markup: true));
+        File.WriteAllText(path, Corpus());
     }
 
     /// <summary>
@@ -241,31 +255,59 @@ public static class LayoutBenchmark
     {
         const int Keys = 10;
 
-        (string Label, TypographyPreset Preset, bool Markup)[] configurations =
+        (string Label, TypographyPreset Preset, bool Markup, bool Toc)[] configurations =
         [
-            ("Default, liso    ", TypographyPreset.Default, false),
-            ("Default, marcado ", TypographyPreset.Default, true),
-            ("ABNT, liso       ", TypographyPreset.Abnt, false),
-            ("ABNT, marcado    ", TypographyPreset.Abnt, true),
+            ("Default, liso     ", TypographyPreset.Default, false, false),
+            ("Default, marcado  ", TypographyPreset.Default, true, false),
+            ("ABNT, liso        ", TypographyPreset.Abnt, false, false),
+            ("ABNT, marcado     ", TypographyPreset.Abnt, true, false),
+            ("ABNT, com sumário ", TypographyPreset.Abnt, true, true),
         ];
 
         output.WriteLine($"ms por tecla numa rajada de {Keys} (melhor de 3)");
-        output.WriteLine("                      começo      meio   fim de parágrafo      seta");
+        output.WriteLine("                       começo      meio   fim de parágrafo      seta");
 
-        foreach (var (label, preset, markup) in configurations)
+        foreach (var (label, preset, markup, toc) in configurations)
         {
-            var source = BuildDocument(Paragraphs, WordsPerParagraph, markup);
+            // O \toc vai no começo, que é onde o autor o põe, e é também o pior caso: as entradas
+            // ficam antes de tudo, então qualquer tecla no documento está depois delas.
+            var source = (toc ? TocMarker : string.Empty) + BuildDocument(Paragraphs, WordsPerParagraph, markup);
 
             var start = Burst(source, preset, InsideLine(source, 0.05), Keys);
             var middle = Burst(source, preset, InsideLine(source, 0.50), Keys);
             var lineEnd = Burst(source, preset, EndOfLine(source, 0.50), Keys);
             var arrow = Traversal(source, preset, InsideLine(source, 0.50), Keys);
 
-            output.WriteLine($"{label} : {start,8:N1}  {middle,8:N1}  {lineEnd,11:N1}  {arrow,8:N1}");
+            output.WriteLine($"{label}: {start,8:N1}  {middle,8:N1}  {lineEnd,11:N1}  {arrow,8:N1}");
         }
 
         output.WriteLine(string.Empty);
     }
+
+    /// <summary>
+    /// Uma publicação: paginar mais os passes que o aplicativo roda antes de desenhar.
+    /// </summary>
+    /// <remarks>
+    /// <b>Pelo <c>LayoutEngine.Publish</c>, e não pelo <c>Layout</c> cru</b>, porque é a publicação
+    /// que o autor sente — é ela que preenche o sumário. As <b>faixas ficam de fora</b>
+    /// (<c>HeaderFooterSettings.None</c>): elas não são o assunto desta medição, e mantê-las fora é
+    /// o que deixa as quatro primeiras linhas da tabela comparáveis com as que o roadmap publica
+    /// desde a Fatia 4.3.
+    /// </remarks>
+    private static PaginatedDocument Publish(
+        string source,
+        TypographyPreset preset,
+        ITextMeasurer measurer,
+        int caret,
+        LayoutReuse? reuse) =>
+        LayoutEngine.Publish(
+            MarkupParser.Parse(source, preset),
+            PageSettings.A4,
+            measurer,
+            HeaderFooterSettings.None,
+            caret,
+            reuse,
+            preset);
 
     /// <summary>Milissegundos por tecla, encadeando o layout de uma no reuso da seguinte.</summary>
     private static double Burst(string source, TypographyPreset preset, int caretAt, int keys)
@@ -280,8 +322,7 @@ public static class LayoutBenchmark
             var text = source;
             var caret = caretAt;
 
-            var document = LayoutEngine.Layout(
-                MarkupParser.Parse(text, preset), PageSettings.A4, measurer, caret, preset: preset);
+            var document = Publish(text, preset, measurer, caret, reuse: null);
 
             var stopwatch = Stopwatch.StartNew();
 
@@ -294,8 +335,7 @@ public static class LayoutBenchmark
                 // inserir e só depois pede a repaginação.
                 caret++;
 
-                document = LayoutEngine.Layout(
-                    MarkupParser.Parse(edited, preset), PageSettings.A4, measurer, caret, reuse, preset);
+                document = Publish(edited, preset, measurer, caret, reuse);
 
                 text = edited;
             }
@@ -328,8 +368,7 @@ public static class LayoutBenchmark
         {
             var caret = caretAt;
 
-            var document = LayoutEngine.Layout(
-                MarkupParser.Parse(source, preset), PageSettings.A4, measurer, caret, preset: preset);
+            var document = Publish(source, preset, measurer, caret, reuse: null);
 
             var stopwatch = Stopwatch.StartNew();
 
@@ -338,13 +377,8 @@ public static class LayoutBenchmark
                 var newline = source.IndexOf('\n', caret);
                 caret = newline < 0 || newline + 1 >= source.Length ? caretAt : newline + 1;
 
-                document = LayoutEngine.Layout(
-                    MarkupParser.Parse(source, preset),
-                    PageSettings.A4,
-                    measurer,
-                    caret,
-                    LayoutReuse.Between(source, source, document),
-                    preset);
+                document = Publish(
+                    source, preset, measurer, caret, LayoutReuse.Between(source, source, document));
             }
 
             stopwatch.Stop();

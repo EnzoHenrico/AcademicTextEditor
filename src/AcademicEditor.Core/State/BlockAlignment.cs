@@ -144,7 +144,7 @@ public static class BlockAlignment
     }
 
     private static bool IsSkipped(ReadOnlySpan<char> line) =>
-        line.IsWhiteSpace() || line.Trim().SequenceEqual(MarkupTokenizer.PageBreakMarker);
+        line.IsWhiteSpace() || BlockTags.IsMarker(line);
 
     private static int IndexOf(TextAlignment? alignment) => alignment switch
     {

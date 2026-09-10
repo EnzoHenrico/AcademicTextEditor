@@ -15,6 +15,9 @@ public enum MarkupTokenKind
 
     /// <summary>Linha contendo apenas <c>\page</c>: quebra de página explícita.</summary>
     PageBreak,
+
+    /// <summary>Linha contendo apenas <c>\toc</c>: sumário automático.</summary>
+    TableOfContents,
 }
 
 /// <summary>
