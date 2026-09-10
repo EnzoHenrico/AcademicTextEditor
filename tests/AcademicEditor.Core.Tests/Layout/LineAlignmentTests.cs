@@ -169,9 +169,11 @@ public sealed class LineAlignmentTests
 
         Assert.Equal(" ", blank.Text);
         Assert.Equal("cd", word.Text);
-        Assert.Equal(blank.SourceEnd, word.SourceStart);
+        Assert.Equal(blank.LineEnd, word.LineOffset);
 
-        Assert.Equal(word.XPt, CaretGeometry.ColumnPt(first, word.SourceStart, Measurer), precision: 9);
+        var wordStart = first.SourceStart + word.LineOffset;
+
+        Assert.Equal(word.XPt, CaretGeometry.ColumnPt(first, wordStart, Measurer), precision: 9);
     }
 
     public static TheoryData<string, TextAlignment> TodoAlinhamentoDeCadaTexto()

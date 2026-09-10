@@ -91,6 +91,37 @@ public sealed class LayoutReuseTests
     }
 
     /// <summary>
+    /// Deslocar uma linha reaproveitada não copia os runs dela.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A propriedade que sustenta o custo de uma tecla, afirmada pela <b>estrutura</b> e não pelo
+    /// relógio: o offset de cada run é relativo ao começo da linha, então mover a linha no buffer é
+    /// uma cópia de record e o array de runs continua sendo o mesmo objeto.
+    /// </para>
+    /// <para>
+    /// Com offset absoluto isto reescrevia run a run. À esquerda são um ou dois por linha, mas
+    /// justificado são ~20 — a justificação parte a linha em cada fronteira de branco —, e digitar
+    /// no meio de uma tese desloca metade do documento.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void Deslocar_uma_linha_reaproveitada_nao_copia_os_runs()
+    {
+        var before = Paragraphs(count: 10);
+        var after = before.Insert(1, "X");
+        var previous = Layout(before, caretOffset: 1);
+        var reused = Layout(after, caretOffset: 2, LayoutReuse.Between(before, after, previous));
+
+        var was = previous.Pages.SelectMany(page => page.Lines).ToArray()[^1];
+        var now = reused.Pages.SelectMany(page => page.Lines).ToArray()[^1];
+
+        // A última linha veio depois do bloco sujo, então o offset dela andou um caractere.
+        Assert.Equal(was.SourceStart + 1, now.SourceStart);
+        Assert.Same(was.Runs, now.Runs);
+    }
+
+    /// <summary>
     /// Atravessar bloco sem editar requebra <b>dois</b> blocos e reaproveita o resto.
     /// </summary>
     /// <remarks>

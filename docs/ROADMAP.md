@@ -1364,23 +1364,52 @@ Registrado desta fatia:
   meio (31,5 ms) do documento é `Shift` copiando run a run as linhas que vieram depois. Vira a
   Fatia 4.3 — é mudança de modelo, e não cabia junto de uma correção de guarda
 
-### Fatia 4.3 — O deslocamento deixa de copiar run a run ⬜
+### Fatia 4.3 — O deslocamento deixa de copiar run a run ✅
 
-- [ ] `LaidOutRun.SourceStart` passa a ser **relativo à linha**, e deslocar uma linha vira um campo
-      em vez de um array
+- [x] `LaidOutRun.SourceStart` virou `LineOffset`, **relativo à linha** — deslocar uma linha passou
+      a ser uma cópia de record em vez de um array por linha
+- [x] Teste estrutural: a linha reaproveitada e deslocada compartilha o **mesmo objeto** de runs
 
 **O reflow reaproveita a medição, não a estrutura**, e foi por isso que a justificação o encareceu
-sem que ninguém percebesse. `Shift` copia cada run de cada linha depois do bloco sujo: à esquerda
+sem que ninguém percebesse. `Shift` copiava cada run de cada linha depois do bloco sujo: à esquerda
 são 1–2 runs por linha; **justificado são ~20**, porque o passe parte a linha em cada fronteira de
-branco. Digitar no **meio** desloca metade do documento, e é exatamente onde o sintoma aparece.
+branco. Digitar no **meio** desloca metade do documento, e era exatamente ali que o sintoma aparecia.
 
-Medido na Fatia 4.2, preset da ABNT com marcação: 49,3 ms no começo do documento contra 31,5 ms no
-meio, e 14,0 ms na seta, que não desloca nada. **A diferença é o deslocamento**, e é o que separa a
-tecla dos 16ms de um quadro.
+**O campo foi renomeado, e isso é parte do conserto.** Trocar o significado de `SourceStart` sem
+trocar o nome deixaria cada consumidor compilando e mentindo — e uma falha de offset não quebra o
+desenho, quebra o caret. Com o nome novo, o compilador apontou os dezessete lugares.
 
-**Fica em fatia própria porque é mudança de modelo, não de guarda.** Toca `CaretGeometry`,
-`SelectionGeometry`, `WordBoundaries`, `CaretNavigator`, o `PageRenderer` e o `PdfExporter` — seis
-consumidores da mesma conta —, e um erro ali não quebra o desenho, quebra o caret.
+Medido com `--measure-layout`, milissegundos por tecla:
+
+    ANTES                começo      meio   fim de parágrafo      seta
+    Default, liso          17,3      12,8         11,5            7,0
+    Default, marcado       23,3      19,8         20,4           12,8
+    ABNT, liso             43,6      22,8         25,0            7,1
+    ABNT, marcado          48,2      30,5         31,6           13,4
+
+    DEPOIS               começo      meio   fim de parágrafo      seta
+    Default, liso          14,5      10,7         11,1            6,5
+    Default, marcado       21,0      18,1         18,8           14,3
+    ABNT, liso             15,2      12,1         12,2            8,1
+    ABNT, marcado          20,6      19,0         18,5           15,8
+
+Registrado desta fatia:
+
+- **A coluna "começo" era a mais cara e deixou de ser.** Digitar no início do documento desloca
+  todas as linhas; digitar no meio, metade. Com o deslocamento de graça, as duas colunas
+  praticamente empatam (20,6 contra 19,0) — que é a forma da tabela dizendo que o custo saiu
+- **`ABNT, liso` caiu 2,9×** (43,6 → 15,2) e é a medida limpa do que a justificação custava no
+  deslocamento: as mesmas linhas, os mesmos blocos, só o número de runs por linha mudando
+- **Os 409 testes passaram sem uma linha alterada**, salvo o único que afirmava a coordenada antiga.
+  É a prova de equivalência que a troca precisava — o caret, a seleção, o `WordBoundaries` e o hit
+  test são os mesmos por caminhos novos
+- **O teste que pina o ganho é estrutural, não cronometrado:** a linha deslocada compartilha o
+  **mesmo objeto** de runs com a anterior. Um teto de tempo mediria a máquina; `Assert.Same` mede a
+  propriedade
+- **Sobrou o parser, e ele está medido:** a diferença entre `liso` e `marcado` é de ~7ms por tecla
+  em qualquer preset, e é o `MarkupParser` refazendo o documento inteiro — uma `Substring` por
+  linha, uma `List` de delimitadores por linha e um LINQ por linha, num documento de 16 mil linhas.
+  É o próximo candidato, e não desta fatia
 
 ### Fatia 5a — Marcação acadêmica inline ✅
 

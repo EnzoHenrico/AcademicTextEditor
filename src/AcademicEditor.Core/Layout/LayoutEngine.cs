@@ -413,24 +413,12 @@ public static class LayoutEngine
 
     /// <summary>A mesma linha, algumas posições adiante no buffer.</summary>
     /// <remarks>
-    /// Uma cópia de record por linha — o mesmo que o page breaker já paga ao assentá-la numa
-    /// folha. O que se economiza é o caro: montar chunks, medir cada palavra e alocar o texto dos
-    /// runs.
+    /// <b>Uma cópia de record, e nada mais.</b> Os offsets dos runs são relativos ao começo da
+    /// linha, então mover a linha move todos eles de graça. Com offset absoluto isto reescrevia run
+    /// a run — um ou dois por linha à esquerda, mas ~20 numa linha justificada, porque a
+    /// justificação parte a linha em cada fronteira de branco. Digitar no meio de uma tese desloca
+    /// metade do documento, e era essa a metade cara de uma tecla.
     /// </remarks>
-    private static LaidOutLine Shift(LaidOutLine line, int delta)
-    {
-        if (line.Runs.Count == 0)
-        {
-            return line with { SourceStart = line.SourceStart + delta };
-        }
-
-        var runs = new LaidOutRun[line.Runs.Count];
-
-        for (var index = 0; index < runs.Length; index++)
-        {
-            runs[index] = line.Runs[index] with { SourceStart = line.Runs[index].SourceStart + delta };
-        }
-
-        return line with { SourceStart = line.SourceStart + delta, Runs = runs };
-    }
+    private static LaidOutLine Shift(LaidOutLine line, int delta) =>
+        line with { SourceStart = line.SourceStart + delta };
 }

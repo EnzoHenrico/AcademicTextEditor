@@ -362,9 +362,11 @@ public static class CaretNavigator
     // units de uma vez, senão metade das teclas não moveria o caret lugar nenhum visível.
     private static int StepAfter(LaidOutLine line, int offset)
     {
+        var local = offset - line.SourceStart;
+
         foreach (var run in line.Runs)
         {
-            var index = offset - run.SourceStart;
+            var index = local - run.LineOffset;
 
             if (index >= 0 && index < run.Text.Length && char.IsHighSurrogate(run.Text[index]))
             {
@@ -377,9 +379,11 @@ public static class CaretNavigator
 
     private static int StepBefore(LaidOutLine line, int offset)
     {
+        var local = offset - line.SourceStart;
+
         foreach (var run in line.Runs)
         {
-            var index = offset - run.SourceStart - 1;
+            var index = local - run.LineOffset - 1;
 
             if (index > 0 && index < run.Text.Length && char.IsLowSurrogate(run.Text[index]))
             {

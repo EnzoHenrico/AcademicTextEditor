@@ -150,7 +150,7 @@ internal static class LineAlignment
                     run.Style,
                     penXPt,
                     widthPt,
-                    run.SourceStart + position);
+                    run.LineOffset + position);
 
                 penXPt += widthPt;
                 position = end;

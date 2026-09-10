@@ -14,7 +14,7 @@ public readonly record struct CaretPosition(int PageIndex, double XPt, double YP
 /// </summary>
 /// <remarks>
 /// <para>
-/// A ponte é o par <see cref="LaidOutLine.SourceStart"/>/<see cref="LaidOutRun.SourceStart"/>:
+/// A ponte é o par <see cref="LaidOutLine.SourceStart"/>/<see cref="LaidOutRun.LineOffset"/>:
 /// como o texto de um run corresponde caractere a caractere ao trecho que ele cobre na fonte,
 /// achar a coluna é medir um prefixo desse texto — sem tabela auxiliar e sem varrer o documento.
 /// </para>
@@ -54,18 +54,22 @@ public static class CaretGeometry
         ArgumentNullException.ThrowIfNull(line);
         ArgumentNullException.ThrowIfNull(measurer);
 
+        // Os runs são posicionados dentro da linha, então a comparação acontece toda em
+        // coordenadas de linha — uma subtração aqui em vez de uma soma por run.
+        var local = offset - line.SourceStart;
+
         for (var index = 0; index < line.Runs.Count; index++)
         {
             var run = line.Runs[index];
 
             // Offset num vão que a linha cobre mas nenhum run ocupa (a marcação de um heading,
             // por exemplo): o caret encosta no começo do run seguinte.
-            if (offset < run.SourceStart)
+            if (local < run.LineOffset)
             {
                 return run.XPt;
             }
 
-            if (offset > run.SourceEnd)
+            if (local > run.LineEnd)
             {
                 continue;
             }
@@ -74,14 +78,14 @@ public static class CaretGeometry
             // texto está desenhado. Numa linha justificada o run de branco carrega a sobra dentro
             // da própria largura, então terminar no run anterior deixaria o caret um vão atrás da
             // palavra que ele deveria preceder.
-            if (offset == run.SourceEnd
+            if (local == run.LineEnd
                 && index + 1 < line.Runs.Count
-                && line.Runs[index + 1].SourceStart == offset)
+                && line.Runs[index + 1].LineOffset == local)
             {
                 return line.Runs[index + 1].XPt;
             }
 
-            return run.XPt + measurer.MeasureWidthPt(run.Text.AsSpan(0, offset - run.SourceStart), run.Style);
+            return run.XPt + measurer.MeasureWidthPt(run.Text.AsSpan(0, local - run.LineOffset), run.Style);
         }
 
         return line.Runs.Count == 0 ? 0.0 : line.Runs[^1].XPt + line.Runs[^1].WidthPt;
@@ -102,11 +106,11 @@ public static class CaretGeometry
         {
             if (columnPt < run.XPt + run.WidthPt)
             {
-                return OffsetInRun(run, columnPt, measurer);
+                return line.SourceStart + OffsetInRun(run, columnPt, measurer);
             }
         }
 
-        return line.Runs[^1].SourceEnd;
+        return line.SourceStart + line.Runs[^1].LineEnd;
     }
 
     /// <summary>O offset é o fim de uma linha e o começo da seguinte?</summary>
@@ -252,13 +256,14 @@ public static class CaretGeometry
         return (-1, -1);
     }
 
+    /// <summary>A posição, <b>dentro da linha</b>, mais próxima da coluna pedida.</summary>
     private static int OffsetInRun(LaidOutRun run, double columnPt, ITextMeasurer measurer)
     {
         var target = columnPt - run.XPt;
 
         if (target <= 0.0)
         {
-            return run.SourceStart;
+            return run.LineOffset;
         }
 
         // Maior prefixo que ainda não passa do alvo. A largura cresce monotonicamente com o
@@ -304,6 +309,6 @@ public static class CaretGeometry
             best--;
         }
 
-        return run.SourceStart + best;
+        return run.LineOffset + best;
     }
 }
