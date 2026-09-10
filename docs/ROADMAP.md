@@ -950,9 +950,9 @@ Registrado desta fatia:
 **Objetivo:** o que sai do editor passa a ser um trabalho acadêmico, e não um texto paginado —
 folha numerada, tipografia de norma, PDF, e as extensões de markup que uma tese usa.
 
-Onze fatias, nenhuma com mais de três tópicos — eram sete; a 5 se partiu em duas ao ser desenhada,
+Doze fatias, nenhuma com mais de três tópicos — eram sete; a 5 se partiu em duas ao ser desenhada,
 porque a metade que leva a nota ao pé da folha precisa de capacidades que o motor não tem, e mais
-três entraram depois **como correção** (4.1, 4.2 e 5a.1). A ordem tem duas dependências reais e o
+quatro entraram depois **como correção** (4.1, 4.2, 4.3 e 5a.1). A ordem tem duas dependências reais e o
 resto é independente: a Fatia 2 precisa do preset da Fatia 1 para saber com que fonte desenhar o
 cabeçalho, e a Fatia 7 é a última porque um menu só oferece o que já existe. **O PDF vem logo
 depois do cabeçalho de propósito:** ele é a prova da aposta que abriu o projeto — o motor de
@@ -1305,40 +1305,82 @@ Registrado desta fatia:
   `extraPt` à esquerda da seguinte. Com a sobra de volta ao normal isso é fração de ponto; era
   visível porque a sobra estava inflada por este bug
 
-### Fatia 4.2 — Uma tecla volta a custar uma tecla ⬜
+### Fatia 4.2 — Uma tecla volta a custar uma tecla ✅
 
-Fatia corretiva. **Medir antes de mexer:** nada aqui é otimizado sem número de antes e de depois.
+Fatia corretiva. **Medir antes de mexer:** nada aqui foi otimizado sem número de antes e de depois.
 
-- [ ] A medição passa a descrever o aplicativo — preset `Abnt` ao lado do `Default`, corpus **com**
-      marcação, e uma rajada encadeada de teclas, inclusive **no fim do parágrafo**
-- [ ] `LayoutEngine.Reuse`: a guarda do caret compara o offset pós-edição com o intervalo **novo** do
+- [x] A medição passa a descrever o aplicativo — preset `Abnt` ao lado do `Default`, corpus **com**
+      marcação, e uma rajada encadeada de teclas, no começo, no meio, **no fim do parágrafo** e com
+      a seta atravessando bloco
+- [x] `LayoutEngine`: a guarda do caret compara o offset pós-edição com o intervalo **novo** do
       bloco, e a travessia de bloco passa a requebrar **dois** blocos em vez de recusar
-- [ ] O deslocamento das linhas reaproveitadas deixa de copiar run a run
+- [x] Guard determinístico no Core, contando medições em vez de milissegundos
 
-**A guarda do caret compara duas convenções diferentes, e recusa quase sempre.** `dirtyWas` é o
-intervalo **pré-edição** do bloco e `caretOffset` chega **pós-edição**: digitar `d` no fim de um
-bloco `"abc"` dá `dirtyWas = (0,3)` e caret 4, `Contains` falso, e o motor pagina as 300 folhas do
-zero. **Toda tecla digitada no fim de um parágrafo**, que é como se escreve. Os testes não pegam
-porque passam o mesmo caret ao layout anterior e ao novo.
+**A guarda do caret comparava duas convenções diferentes, e recusava quase sempre.** `dirtyWas` é o
+intervalo **pré-edição** do bloco e `caretOffset` chega **pós-edição** — quem digita move o caret e
+só então pede a repaginação. Digitar `d` no fim de um bloco `"abc"` dá `dirtyWas = (0,3)` e caret 4,
+`Contains` falso, e o motor paginava as 300 folhas do zero: **toda tecla digitada no fim de um
+parágrafo**, que é como se escreve. As duas metades da guarda continuam existindo porque comparam
+coisas diferentes — o `RevealedBlock` veio do layout anterior e só casa com o intervalo antigo.
 
-**Travessia de bloco custa o documento inteiro, e um bloco é uma linha.** O custo "uma repaginação
+**Travessia de bloco custava o documento inteiro, e um bloco é uma linha.** O custo "uma repaginação
 por travessia de bloco" foi aceito quando bloco queria dizer parágrafo; desde a Fatia 4.1 da Fase 3
-— *uma linha da fonte é uma linha na página* — um bloco **é** uma linha, então é uma repaginação
-completa por ↑/↓. Revelar e esconder tocam dois blocos, e requebrar dois cabe na máquina que já
-existe.
+— *uma linha da fonte é uma linha na página* — um bloco **é** uma linha da fonte, e o preço virou uma
+repaginação completa por ↑/↓. `Rebuild` passa a requebrar **dois** blocos: o que perde a revelação e
+o que a ganha. Dois, e não um, porque revelar é uma troca — e a armadilha é o `includeMarkup`, que
+tem de vir do bloco **revelado** e não do bloco requebrado, senão quem perdeu a revelação sai ainda
+mostrando o `## `. Tem teste, e ele fica vermelho com `includeMarkup: true`.
 
-**O reflow reaproveita a medição, não a estrutura** — e foi por isso que a justificação o encareceu
+Medido com `--measure-layout`, milissegundos por tecla numa rajada de dez, melhor de três:
+
+    ANTES                começo      meio   fim de parágrafo      seta
+    Default, liso          17,0      12,9         88,6              —
+    Default, marcado       24,5      20,0        100,0              —
+    ABNT, liso             41,3      25,4        204,2              —
+    ABNT, marcado          50,8      33,3        207,9              —
+
+    DEPOIS               começo      meio   fim de parágrafo      seta
+    Default, liso          17,1      12,5         12,6            6,5
+    Default, marcado       24,3      19,6         20,1           13,4
+    ABNT, liso             44,2      24,2         25,4            7,5
+    ABNT, marcado          49,3      31,5         31,3           14,0
+
+Registrado desta fatia:
+
+- **O número que o roadmap publicava era 8,6 ms, e a configuração do aplicativo custava 207,9.**
+  Vinte e quatro vezes, e não por uma regressão: o número sempre descreveu o preset do MVP, alinhado
+  à esquerda, num corpus sem marcação, medindo **uma** tecla isolada no meio de um parágrafo. Três
+  diferenças em relação ao que o autor faz, e cada uma escondia um caminho diferente
+- **A rajada encadeada é o que revela recusa, e uma tecla isolada não revela.** Uma medição isolada
+  sempre parte de um estado recém-paginado; a recusa aparece a partir da segunda tecla
+- **O guard conta medições, não milissegundos.** Um teto de tempo passa verde numa máquina rápida
+  com o reflow recusando toda tecla. A contagem é a propriedade que importa — *o caminho incremental
+  foi tomado* —, não depende da máquina, e diz o porquê quando falha: a pior tecla custa **7**
+  medições contra as **266.071** de uma paginação completa
+- **Nenhum dos testes de reaproveitamento passava o caret pós-edição.** Todos usavam o mesmo caret
+  no layout anterior e no novo, o que só descreve uma tecla digitada no meio do texto. O bug estava
+  a um `InlineData` de distância de ser visto
+- **Sobrou o deslocamento, e ele está medido**: a diferença entre digitar no começo (49,3 ms) e no
+  meio (31,5 ms) do documento é `Shift` copiando run a run as linhas que vieram depois. Vira a
+  Fatia 4.3 — é mudança de modelo, e não cabia junto de uma correção de guarda
+
+### Fatia 4.3 — O deslocamento deixa de copiar run a run ⬜
+
+- [ ] `LaidOutRun.SourceStart` passa a ser **relativo à linha**, e deslocar uma linha vira um campo
+      em vez de um array
+
+**O reflow reaproveita a medição, não a estrutura**, e foi por isso que a justificação o encareceu
 sem que ninguém percebesse. `Shift` copia cada run de cada linha depois do bloco sujo: à esquerda
-são 1–2 runs por linha, justificado são ~20, porque o passe parte a linha em cada fronteira de
-branco. Digitar no **meio** desloca metade do documento, que é exatamente onde o sintoma aparece.
+são 1–2 runs por linha; **justificado são ~20**, porque o passe parte a linha em cada fronteira de
+branco. Digitar no **meio** desloca metade do documento, e é exatamente onde o sintoma aparece.
 
-Números de partida, do harness `--measure-layout` no preset `Default` sobre o corpus sem marcação —
-que é justamente a configuração que **não** é a do aplicativo, e por isso são o "antes" a bater:
+Medido na Fatia 4.2, preset da ABNT com marcação: 49,3 ms no começo do documento contra 31,5 ms no
+meio, e 14,0 ms na seta, que não desloca nada. **A diferença é o deslocamento**, e é o que separa a
+tecla dos 16ms de um quadro.
 
-| | |
-|---|---|
-| tecla, incremental | 8,6 ms |
-| tecla, reflow total | 79,7 ms |
+**Fica em fatia própria porque é mudança de modelo, não de guarda.** Toca `CaretGeometry`,
+`SelectionGeometry`, `WordBoundaries`, `CaretNavigator`, o `PageRenderer` e o `PdfExporter` — seis
+consumidores da mesma conta —, e um erro ali não quebra o desenho, quebra o caret.
 
 ### Fatia 5a — Marcação acadêmica inline ✅
 
