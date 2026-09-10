@@ -31,6 +31,15 @@ public abstract class BlockNode
 
     public IReadOnlyList<InlineRun> Runs { get; }
 
+    /// <summary>As notas que este bloco chama, em ordem. Vazia na esmagadora maioria deles.</summary>
+    /// <remarks>
+    /// Mora no bloco e não no run porque a pergunta que o layout faz é "que notas esta linha
+    /// estreia" — e a linha sai da quebra do bloco. Guardar um identificador em cada
+    /// <c>LaidOutRun</c> custaria memória em dezesseis mil linhas para uma coisa que aparece
+    /// algumas dezenas de vezes numa tese.
+    /// </remarks>
+    public IReadOnlyList<FootnoteCall> FootnoteCalls { get; init; } = [];
+
     /// <summary>Como as linhas deste bloco se distribuem na largura útil.</summary>
     /// <remarks>
     /// Já vem resolvido: o parser aplica o padrão do preset quando a linha não traz marcação, e

@@ -129,6 +129,21 @@ public static class PdfExporter
         DrawBand(canvas, page.Header, contentLeft);
         DrawBand(canvas, page.Footer, contentLeft);
 
+        // O filete da nota de rodapé VAI para o papel, ao contrário do tracejado do \page: aquele
+        // é marca de edição, este é convenção tipográfica — sem ele o leitor não sabe onde o texto
+        // termina e a nota começa.
+        if (page.FootnoteRulePt is { } rulePt)
+        {
+            using var rule = new SKPaint { Color = SKColors.Black, StrokeWidth = 0.6f, IsAntialias = true };
+
+            canvas.DrawLine(
+                contentLeft,
+                contentTop + (float)rulePt,
+                contentLeft + ((float)settings.ContentWidthPt / 3.0f),
+                contentTop + (float)rulePt,
+                rule);
+        }
+
         foreach (var line in page.Lines)
         {
             if (line.Kind == LineKind.PageBreak)

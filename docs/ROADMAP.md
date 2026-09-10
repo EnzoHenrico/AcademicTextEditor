@@ -1550,26 +1550,63 @@ Registrado desta fatia:
   da definição é literal. Aquela capacidade destrava a *numeração automática* e o `[@cite]`
   resolvido, que são a Fatia 5d. A nota no pé da folha depende deste índice
 
-### Fatia 5c — Notas de rodapé no pé da folha ⬜
+### Fatia 5c — Notas de rodapé no pé da folha ✅
 
-- [ ] `[^id]: texto` como bloco próprio, fora do fluxo; **definição nunca chamada continua sendo
+- [x] `[^id]: texto` como bloco próprio, fora do fluxo; **definição nunca chamada continua sendo
       parágrafo comum**, no lugar onde foi escrita — nenhum texto pode sumir da tela
-- [ ] Reserva da altura das notas na folha, e as linhas delas assentadas no pé da área de conteúdo,
+- [x] Reserva da altura das notas na folha, e as linhas delas assentadas no pé da área de conteúdo,
       abaixo de um filete
-- [ ] `PreviousLine`/`NextLine` deixam de ser uma coisa só
+- [x] `PreviousLine`/`NextLine` deixam de ser uma coisa só
 
-**A reserva não precisa de laço de convergência, e essa é a boa surpresa.** A altura de uma nota é
-conhecida *antes* de a linha que a chama ser assentada — basta quebrar as definições primeiro. O
-page breaker decide com antecedência: se a linha **mais** as notas que ela estreia não cabem no que
-resta, as duas descem juntas para a folha seguinte. O ponto fixo que o roadmap temia era do desenho
-antigo, em que a nota era descoberta depois de a linha já estar posta.
+**A reserva não precisou de laço de convergência, e a previsão se confirmou.** A altura de uma nota
+é conhecida *antes* de a linha que a chama ser assentada, porque as definições são quebradas
+primeiro. O page breaker decide com antecedência: se a linha **mais** as notas que ela estreia não
+cabem no que resta, as duas descem juntas para a folha seguinte. Tem teste, e ele mostra a linha
+que caberia sozinha descendo por causa da nota.
 
-**"Linha anterior" vira duas perguntas, e hoje é uma só.** `CaretGeometry.PreviousLine`/`NextLine`
-andam pelas folhas — ordem de **desenho** —, e são usados por dois consumidores que querem coisas
-diferentes: ↑/↓ querem a linha visualmente adjacente, e ←/→, a seleção e a afinidade querem a linha
-**anterior no texto**. As duas coincidem enquanto não houver nota de rodapé, e por isso trocá-las
-agora seria mudança sem como testar. Com a nota, o passeio por ordem de fonte sai do `Index`, que a
-5b construiu, e o de desenho continua onde está — cada um com seu nome.
+**"Linha anterior" virou duas perguntas, como a 5b previu.** ← e →, a seleção e a afinidade andam
+pelo **texto** (`PreviousInSource`/`NextInSource`, sobre o índice); ↑ e ↓ e o clique andam pela
+**folha** (`PreviousLine`/`NextLine`, sobre as folhas). A seleção deixou de comparar `(folha, linha)`
+e passou a percorrer posições do índice — a comparação antiga saltaria ou repetiria linhas assim
+que as duas ordens divergissem.
+
+**O identificador não é marcação, e os colchetes são.** Escondida a marcação, a definição se lê
+`¹texto` — que é como a nota aparece no pé da folha. Um rótulo escondido junto com a pontuação
+deixaria a nota sem dizer a que chamada ela responde.
+
+Conferido com o medidor **real** e o preset da ABNT, sobre o texto de exemplo do aplicativo: a nota
+de cinco linhas termina exatamente em 697,9pt, que é o pé da área de conteúdo, e o filete cai em
+582,6pt — meia folga acima dela. Nenhum offset ficou sem linha.
+
+Registrado desta fatia:
+
+- **O guard de desempenho da Fatia 4.2 pegou uma regressão minha, e essa é a prova de que ele vale.**
+  A primeira versão recolhia as notas do zero a cada tecla: numa tese com duzentas definições, uma
+  tecla passou de 7 para **5.073 medições**. O caminho incremental passou a reaproveitar as linhas
+  das notas como reaproveita as do fluxo — só a definição que mudou de texto ou de revelação é
+  requebrada —, e o número caiu para 464
+- **464 é o custo honesto de requebrar um parágrafo de cem palavras**, e as 7 da Fatia 4.2 eram um
+  título de quatro palavras: o número depende de onde o caret cai, e é o teto (2.000 contra as
+  271.233 de uma paginação completa) que carrega a garantia
+- **Um documento sem nota não paga nada.** As colunas "liso" da medição não se moveram (13,7 contra
+  14,0 ms no começo do documento): sem chamada nenhuma, o recolhimento das notas sai na primeira
+  comparação
+- **O índice em ordem de fonte finalmente tem um documento que o exercita.** Em ordem de desenho os
+  offsets de `aaa[^1]\nbbb\nccc\nddd\neee\n[^1]: nota` saem 0, 8, 12, **24**, 16, 20 — a nota da
+  primeira folha vem do fim do arquivo. O ramo de ordenação que a 5b escreveu e não pôde exercitar
+  roda aqui, e tem teste
+- **A chamada feita de dentro de uma nota não conta.** Ela assentaria a segunda nota na folha em que
+  a primeira foi desenhada, que é dependência circular disfarçada. A nota chamada só de lá continua
+  sendo parágrafo comum
+- **Duas definições com o mesmo rótulo: a primeira vai para o pé, a segunda fica no fluxo.** O bit
+  de "saiu do fluxo" é por **bloco** e não por identificador justamente por isso — nenhum texto pode
+  sumir da tela
+- **O filete vai para o PDF, ao contrário do tracejado do `\page`.** Aquele é marca de edição e o
+  leitor não deve encontrá-lo no papel; este é convenção tipográfica, e sem ele o leitor não sabe
+  onde o texto termina e a nota começa
+- **Fica devido: a nota sai no corpo do texto, em 12pt.** A ABNT quer corpo menor e entrelinhamento
+  simples nas notas. É um `TextStyle` a mais no `TypographyPreset` e um espaçamento por estilo no
+  line breaker — decisão de norma, não de layout, e entra junto com "Normas configuráveis"
 
 ### Fatia 5d — Numeração automática e `[@cite]` resolvido ⬜
 

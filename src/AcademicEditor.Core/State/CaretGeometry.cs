@@ -213,6 +213,96 @@ public static class CaretGeometry
             ? position - 1
             : position;
 
+    /// <summary>
+    /// Posição no índice da linha que contém o offset, resolvida pela afinidade. -1 num documento
+    /// sem linha alguma.
+    /// </summary>
+    internal static int FindPosition(
+        int offset,
+        PaginatedDocument document,
+        CaretAffinity affinity = CaretAffinity.Downstream)
+    {
+        var position = FindIndex(offset, document);
+
+        return position < 0 ? -1 : Resolve(position, offset, document, affinity);
+    }
+
+    /// <summary>A linha <b>anterior no texto</b>, que nem sempre é a de cima na folha.</summary>
+    /// <remarks>
+    /// <para>
+    /// "Linha anterior" são <b>duas</b> perguntas, e eram uma só enquanto a ordem de desenho e a de
+    /// fonte coincidiam. ← e →, a seleção e a afinidade andam pelo <b>texto</b>: para eles a linha
+    /// anterior à primeira nota do pé da folha é a última linha de <i>corpo</i> daquela folha, e
+    /// não a nota de cima. ↑ e ↓ andam pela <b>folha</b>, e para eles é o contrário — ver
+    /// <see cref="PreviousLine"/>.
+    /// </para>
+    /// <para>
+    /// A nota de rodapé é o primeiro caso em que as duas divergem: ela é desenhada na folha da
+    /// chamada e escrita onde o autor quis, quase sempre no fim do arquivo.
+    /// </para>
+    /// </remarks>
+    internal static (int PageIndex, int LineIndex) PreviousInSource(
+        PaginatedDocument document,
+        int page,
+        int line)
+    {
+        var position = PositionOf(document, page, line);
+
+        if (position <= 0)
+        {
+            return (-1, -1);
+        }
+
+        var found = document.Index[position - 1];
+
+        return (found.PageIndex, found.LineIndex);
+    }
+
+    /// <summary>A linha <b>seguinte no texto</b>. Ver <see cref="PreviousInSource"/>.</summary>
+    internal static (int PageIndex, int LineIndex) NextInSource(
+        PaginatedDocument document,
+        int page,
+        int line)
+    {
+        var position = PositionOf(document, page, line);
+
+        if (position < 0 || position + 1 >= document.Index.Count)
+        {
+            return (-1, -1);
+        }
+
+        var found = document.Index[position + 1];
+
+        return (found.PageIndex, found.LineIndex);
+    }
+
+    /// <summary>Onde esta linha está no índice em ordem de fonte.</summary>
+    /// <remarks>
+    /// A busca binária acha o fim do grupo de linhas que dividem o mesmo <c>SourceStart</c> — as
+    /// vazias empatam —, e a volta sobre o grupo acha esta. O grupo é de duas ou três linhas no
+    /// pior caso real.
+    /// </remarks>
+    private static int PositionOf(PaginatedDocument document, int page, int line)
+    {
+        var index = document.Index;
+        var start = document.Pages[page].Lines[line].SourceStart;
+        var at = FindIndex(start, document);
+
+        while (at >= 0 && index[at].SourceStart == start)
+        {
+            if (index[at].PageIndex == page && index[at].LineIndex == line)
+            {
+                return at;
+            }
+
+            at--;
+        }
+
+        return -1;
+    }
+
+    /// <summary>A linha <b>de cima na folha</b>, que nem sempre é a anterior no texto.</summary>
+    /// <remarks>É a que ↑ procura. Ver <see cref="PreviousInSource"/> para a outra pergunta.</remarks>
     internal static (int PageIndex, int LineIndex) PreviousLine(PaginatedDocument document, int page, int line)
     {
         if (line > 0)

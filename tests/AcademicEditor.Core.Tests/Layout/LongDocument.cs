@@ -39,6 +39,7 @@ internal static class LongDocument
         var builder = new StringBuilder();
         var word = 0;
         var note = 0;
+        var notes = 0;
 
         for (var paragraph = 0; paragraph < paragraphs; paragraph++)
         {
@@ -75,9 +76,23 @@ internal static class LongDocument
             if (paragraph % 6 == 1)
             {
                 builder.Append($"[^{++note}]");
+                notes = note;
             }
 
             builder.Append("\n\n");
+        }
+
+        // As definições no fim do arquivo, como numa tese de verdade — e é onde a ordem de desenho
+        // deixa de ser a de fonte, porque cada uma é desenhada no pé da folha da sua chamada.
+        for (var definition = 1; definition <= notes; definition++)
+        {
+            builder.Append($"[^{definition}]: ");
+
+            for (var index = 0; index < 12; index++)
+            {
+                builder.Append(Words[word++ % Words.Length]);
+                builder.Append(index == 11 ? "\n\n" : " ");
+            }
         }
 
         return builder.ToString();

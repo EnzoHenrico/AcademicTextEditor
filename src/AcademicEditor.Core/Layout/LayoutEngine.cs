@@ -55,7 +55,12 @@ public static class LayoutEngine
             return incremental;
         }
 
-        var breaker = new PageBreaker(settings.ContentHeightPt);
+        // As definições são quebradas ANTES de qualquer linha ser assentada, e é isso que dispensa
+        // o laço de convergência: o page breaker sabe a altura de uma nota antes de decidir se a
+        // linha que a chama cabe na folha.
+        var footnotes = Footnotes.Gather(document, settings, measurer, caretOffset, typography);
+
+        var breaker = new PageBreaker(settings.ContentHeightPt, footnotes.Notes, footnotes.RuleGapPt);
 
         // Documento sem bloco nenhum ainda tem uma linha: é onde o caret fica depois que o autor
         // apaga tudo. Uma folha sem linha alguma não daria ao caret altura nem posição, e ele
@@ -73,9 +78,11 @@ public static class LayoutEngine
 
         var revealed = TextRange.Empty;
 
-        foreach (var block in document.Blocks)
+        for (var index = 0; index < document.Blocks.Count; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            var block = document.Blocks[index];
 
             var reveals = caretOffset >= 0
                 && caretOffset >= block.SourceStart
@@ -84,6 +91,14 @@ public static class LayoutEngine
             if (reveals)
             {
                 revealed = new TextRange(block.SourceStart, block.SourceLength);
+            }
+
+            // A definição de uma nota chamada não entra no fluxo: as linhas dela já estão no
+            // acervo, e o page breaker as assenta no pé da folha da chamada. A que ninguém chamou
+            // continua sendo parágrafo comum, no lugar em que foi escrita.
+            if (footnotes.IsPlaced(index))
+            {
+                continue;
             }
 
             if (block is PageBreakNode)
@@ -113,7 +128,8 @@ public static class LayoutEngine
                 measurer,
                 includeMarkup: reveals,
                 typography,
-                block.Alignment))
+                block.Alignment,
+                block.FootnoteCalls))
             {
                 breaker.AddLine(line);
             }
@@ -176,6 +192,7 @@ public static class LayoutEngine
                 document,
                 settings,
                 measurer,
+                caretOffset,
                 typography,
                 reuse,
                 shiftAfter: -1,
@@ -217,6 +234,7 @@ public static class LayoutEngine
             document,
             settings,
             measurer,
+            caretOffset,
             typography,
             reuse,
             shiftAfter: dirtyIndex,
@@ -251,6 +269,7 @@ public static class LayoutEngine
         DocumentNode document,
         PageSettings settings,
         ITextMeasurer measurer,
+        int caretOffset,
         TypographyPreset typography,
         LayoutReuse reuse,
         int shiftAfter,
@@ -262,14 +281,18 @@ public static class LayoutEngine
         CancellationToken cancellationToken)
     {
         // O passeio é pelo ÍNDICE, que está em ordem de fonte — que é a ordem em que este laço
-        // casa linha com bloco. Achatar as folhas dava a ordem de DESENHO: hoje é a mesma coisa,
-        // mas com a nota de rodapé desenhada na folha da chamada elas divergem, e o
+        // casa linha com bloco. Achatar as folhas dava a ordem de DESENHO: hoje elas divergem, e o
         // reaproveitamento passaria a mapear bloco errado para linha errada. Isso não quebra o
         // desenho, quebra o caret. De quebra some o array de dezesseis mil linhas que era
         // materializado a cada tecla, e antes das guardas.
         var previous = reuse.Previous.Index;
-        var lines = reuse.Previous.Pages;
-        var breaker = new PageBreaker(settings.ContentHeightPt);
+        var pages = reuse.Previous.Pages;
+
+        // Primeiro passe: que linhas do layout anterior pertencem a cada bloco. Sai daqui e não do
+        // laço de baixo porque as notas precisam do mapa ANTES de a paginação começar — a
+        // definição está no fim do arquivo e a folha em que ela é desenhada, no meio.
+        var first = new int[document.Blocks.Count];
+        var count = new int[document.Blocks.Count];
         var cursor = 0;
 
         for (var index = 0; index < document.Blocks.Count; index++)
@@ -280,12 +303,11 @@ public static class LayoutEngine
 
             // Antes do bloco sujo os offsets não se moveram; depois dele, todos andaram o mesmo
             // tanto. É o que torna o reaproveitamento uma soma, e não um recálculo.
-            var shift = shiftAfter >= 0 && index > shiftAfter ? reuse.LengthDelta : 0;
             var oldEnd = index == shiftAfter
                 ? dirtyOldEnd
-                : block.SourceStart - shift + block.SourceLength;
+                : block.SourceStart - ShiftOf(index) + block.SourceLength;
 
-            var first = cursor;
+            first[index] = cursor;
 
             while (cursor < previous.Count && previous[cursor].SourceStart <= oldEnd)
             {
@@ -294,9 +316,43 @@ public static class LayoutEngine
 
             // Todo bloco produziu ao menos uma linha da outra vez. Nenhuma aqui significa que a
             // premissa do mapa um-para-um não valeu, e insistir produziria offsets errados.
-            if (cursor == first)
+            if (cursor == first[index])
             {
                 return null;
+            }
+
+            count[index] = cursor - first[index];
+        }
+
+        if (cursor != previous.Count)
+        {
+            return null;
+        }
+
+        // As notas reaproveitam as linhas de antes, deslocadas — requebrar as duzentas definições
+        // de uma tese a cada tecla é o que o guard de desempenho pegou. Só a definição que mudou de
+        // texto ou de revelação é requebrada, que é a mesma regra do fluxo.
+        var footnotes = Footnotes.Gather(
+            document,
+            settings,
+            measurer,
+            caretOffset,
+            typography,
+            index => index == rebreakFirst || index == rebreakSecond ? null : Notes(index));
+
+        var breaker = new PageBreaker(settings.ContentHeightPt, footnotes.Notes, footnotes.RuleGapPt);
+
+        for (var index = 0; index < document.Blocks.Count; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var block = document.Blocks[index];
+
+            // As linhas desta definição já estão no acervo: o page breaker as assenta no pé da
+            // folha da chamada, e elas não voltam para o fluxo.
+            if (footnotes.IsPlaced(index))
+            {
+                continue;
             }
 
             // O marcador de quebra de página não tem marcação a revelar, e o texto dele não muda
@@ -309,7 +365,8 @@ public static class LayoutEngine
                     measurer,
                     includeMarkup: index == revealIndex,
                     typography,
-                    block.Alignment))
+                    block.Alignment,
+                    block.FootnoteCalls))
                 {
                     breaker.AddLine(line);
                 }
@@ -317,11 +374,11 @@ public static class LayoutEngine
                 continue;
             }
 
-            for (var line = first; line < cursor; line++)
+            var shift = ShiftOf(index);
+
+            for (var line = first[index]; line < first[index] + count[index]; line++)
             {
-                var found = previous[line];
-                var original = lines[found.PageIndex].Lines[found.LineIndex];
-                var reused = shift == 0 ? original : Shift(original, shift);
+                var reused = shift == 0 ? LineAt(line) : Shift(LineAt(line), shift);
 
                 breaker.AddLine(reused);
 
@@ -334,9 +391,35 @@ public static class LayoutEngine
             }
         }
 
-        return cursor == previous.Count
-            ? new PaginatedDocument(breaker.Build(), settings, revealed) { Typography = typography }
-            : null;
+        return new PaginatedDocument(breaker.Build(), settings, revealed) { Typography = typography };
+
+        int ShiftOf(int index) => shiftAfter >= 0 && index > shiftAfter ? reuse.LengthDelta : 0;
+
+        LaidOutLine LineAt(int position)
+        {
+            var found = previous[position];
+
+            return pages[found.PageIndex].Lines[found.LineIndex];
+        }
+
+        // As linhas que esta definição produziu da outra vez, deslocadas e carimbadas como nota —
+        // o carimbo importa porque a definição pode não ter sido chamada antes.
+        LaidOutLine[] Notes(int index)
+        {
+            var moved = new LaidOutLine[count[index]];
+            var shift = ShiftOf(index);
+
+            for (var line = 0; line < moved.Length; line++)
+            {
+                var original = LineAt(first[index] + line);
+
+                moved[line] = original.Kind == LineKind.Footnote && shift == 0
+                    ? original
+                    : original with { SourceStart = original.SourceStart + shift, Kind = LineKind.Footnote };
+            }
+
+            return moved;
+        }
     }
 
     private static TextRange RangeOf(BlockNode block) => new(block.SourceStart, block.SourceLength);

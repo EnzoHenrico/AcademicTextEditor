@@ -15,6 +15,9 @@ public enum MarkupTokenKind
 
     /// <summary>Linha contendo apenas <c>\page</c>: quebra de página explícita.</summary>
     PageBreak,
+
+    /// <summary>Linha iniciada por <c>[^id]: </c>: definição de nota de rodapé.</summary>
+    Footnote,
 }
 
 /// <summary>
@@ -40,6 +43,10 @@ public enum MarkupTokenKind
 /// separa do conteúdo. É o que o parser precisa para emitir o run de marcação sem reprocessar a
 /// linha — e para saber onde começa a marcação do heading, quando as duas convivem.
 /// </param>
+/// <param name="IdLength">
+/// Comprimento do identificador de uma definição de nota, entre <c>[^</c> e <c>]</c>; 0 nos demais.
+/// O identificador começa em <c>LineStart + AlignmentLength + 2</c> — não precisa de offset próprio.
+/// </param>
 public readonly record struct MarkupToken(
     MarkupTokenKind Kind,
     int LineStart,
@@ -47,7 +54,8 @@ public readonly record struct MarkupToken(
     int ContentStart,
     int Level,
     TextAlignment? Alignment = null,
-    int AlignmentLength = 0)
+    int AlignmentLength = 0,
+    int IdLength = 0)
 {
     /// <summary>Comprimento do texto útil. O conteúdo sempre termina junto com a linha.</summary>
     public int ContentLength => LineStart + LineLength - ContentStart;

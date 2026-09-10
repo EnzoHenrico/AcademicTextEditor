@@ -53,6 +53,7 @@ public static class MarkupParser
             {
                 MarkupTokenKind.PageBreak => new PageBreakNode(token.LineStart, token.LineLength),
                 MarkupTokenKind.Heading => BuildHeading(source, token, typography),
+                MarkupTokenKind.Footnote => BuildFootnote(source, token, typography),
 
                 // Texto e linha em branco são o mesmo bloco: a segunda é a primeira sem conteúdo.
                 // Uma linha só de espaços mantém os espaços, e o caret anda por dentro deles.
@@ -76,14 +77,53 @@ public static class MarkupParser
         var markupStart = token.LineStart + token.AlignmentLength;
 
         runs.Add(new InlineRun(source[markupStart..token.ContentStart], markupStart, style, IsMarkup: true));
-        runs.AddRange(BuildRuns(source, token, style));
+        runs.AddRange(BuildRuns(source, token, style, out var calls));
 
         return new HeadingNode(
             token.Level,
             token.LineStart,
             token.LineLength,
             runs,
-            token.Alignment ?? preset.Alignment);
+            token.Alignment ?? preset.Alignment)
+        {
+            FootnoteCalls = calls,
+        };
+    }
+
+    /// <summary>
+    /// <c>[^id]: texto</c> — a definição de uma nota de rodapé.
+    /// </summary>
+    /// <remarks>
+    /// <b>O identificador não é marcação, e os colchetes são.</b> Escondida a marcação, a linha
+    /// mostra o rótulo sobrescrito seguido do texto — que é como a nota se lê no pé da folha. Um
+    /// identificador escondido junto com a pontuação deixaria a nota sem dizer a que chamada ela
+    /// responde.
+    /// </remarks>
+    private static FootnoteNode BuildFootnote(string source, MarkupToken token, TypographyPreset preset)
+    {
+        var style = preset.Body;
+        var runs = new List<InlineRun>(5);
+
+        AddAlignmentMarkup(runs, source, token, style);
+
+        var markupStart = token.LineStart + token.AlignmentLength;
+        var idStart = markupStart + AcademicMarkup.FootnoteOpen.Length;
+        var idEnd = idStart + token.IdLength;
+
+        runs.Add(new InlineRun(source[markupStart..idStart], markupStart, style, IsMarkup: true));
+        runs.Add(new InlineRun(source[idStart..idEnd], idStart, style.AsSuperscript()));
+        runs.Add(new InlineRun(source[idEnd..token.ContentStart], idEnd, style, IsMarkup: true));
+        runs.AddRange(BuildRuns(source, token, style, out var calls));
+
+        return new FootnoteNode(
+            source[idStart..idEnd],
+            token.LineStart,
+            token.LineLength,
+            runs,
+            token.Alignment ?? preset.Alignment)
+        {
+            FootnoteCalls = calls,
+        };
     }
 
     private static ParagraphNode BuildParagraph(string source, MarkupToken token, TypographyPreset preset)
@@ -92,13 +132,16 @@ public static class MarkupParser
         var runs = new List<InlineRun>(2);
 
         AddAlignmentMarkup(runs, source, token, style);
-        runs.AddRange(BuildRuns(source, token, style));
+        runs.AddRange(BuildRuns(source, token, style, out var calls));
 
         return new ParagraphNode(
             token.LineStart,
             token.LineLength,
             runs,
-            token.Alignment ?? preset.Alignment);
+            token.Alignment ?? preset.Alignment)
+        {
+            FootnoteCalls = calls,
+        };
     }
 
     /// <summary>
@@ -129,6 +172,11 @@ public static class MarkupParser
     // Todo bloco emite ao menos um run, ainda que de texto vazio. É dele que o line breaker tira
     // a altura e o offset da linha: sem run algum, "# " recém-digitado seria medido com a altura
     // do corpo e uma linha em branco reivindicaria o offset zero do documento.
-    private static IReadOnlyList<InlineRun> BuildRuns(string source, MarkupToken token, TextStyle style) =>
-        AcademicMarkup.Parse(source.Substring(token.ContentStart, token.ContentLength), token.ContentStart, style);
+    private static IReadOnlyList<InlineRun> BuildRuns(
+        string source,
+        MarkupToken token,
+        TextStyle style,
+        out IReadOnlyList<FootnoteCall> calls) =>
+        AcademicMarkup.Parse(
+            source.Substring(token.ContentStart, token.ContentLength), token.ContentStart, style, out calls);
 }

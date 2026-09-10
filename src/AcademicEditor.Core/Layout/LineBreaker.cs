@@ -39,7 +39,8 @@ public static class LineBreaker
         ITextMeasurer measurer,
         bool includeMarkup = false,
         TypographyPreset? preset = null,
-        TextAlignment alignment = TextAlignment.Left)
+        TextAlignment alignment = TextAlignment.Left,
+        IReadOnlyList<FootnoteCall>? calls = null)
     {
         ArgumentNullException.ThrowIfNull(runs);
         ArgumentNullException.ThrowIfNull(measurer);
@@ -122,10 +123,51 @@ public static class LineBreaker
         builder.EndLine();
 
         ClaimHiddenGaps(builder.Lines, runs);
+        AttachCalls(builder.Lines, calls);
 
         LineAlignment.Apply(builder.Lines, alignment, maxWidthPt, measurer);
 
         return builder.Lines;
+    }
+
+    /// <summary>
+    /// Distribui as chamadas de nota do bloco pelas linhas que as contêm.
+    /// </summary>
+    /// <remarks>
+    /// <b>A nota estreia na folha onde a chamada é desenhada</b>, e a chamada está numa linha e não
+    /// num bloco: um parágrafo longo cai em duas folhas, e as notas que ele chama se dividem entre
+    /// elas. As chamadas vêm em ordem e as linhas também, então uma passada casada resolve — e o
+    /// bloco sem chamada nenhuma, que é a esmagadora maioria, sai na primeira comparação.
+    /// </remarks>
+    private static void AttachCalls(List<LaidOutLine> lines, IReadOnlyList<FootnoteCall>? calls)
+    {
+        if (calls is null || calls.Count == 0)
+        {
+            return;
+        }
+
+        var at = 0;
+
+        for (var index = 0; index < lines.Count && at < calls.Count; index++)
+        {
+            var line = lines[index];
+            List<string>? mine = null;
+
+            // A última linha leva o que sobrar: uma chamada colada no fim do bloco pode cair fora
+            // do trecho desenhado quando a marcação em volta dela está escondida.
+            var last = index == lines.Count - 1;
+
+            while (at < calls.Count && (last || calls[at].SourceStart <= line.SourceEnd))
+            {
+                mine ??= [];
+                mine.Add(calls[at++].Id);
+            }
+
+            if (mine is not null)
+            {
+                lines[index] = line with { FootnoteCalls = mine };
+            }
+        }
     }
 
     /// <summary>

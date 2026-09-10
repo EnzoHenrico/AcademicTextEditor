@@ -12,6 +12,16 @@ public enum LineKind
 
     /// <summary>Marcador de quebra de página. Desenhado como um filete, apagado inteiro.</summary>
     PageBreak,
+
+    /// <summary>
+    /// Linha de uma nota de rodapé, assentada no pé da folha da chamada.
+    /// </summary>
+    /// <remarks>
+    /// Texto para todos os efeitos do caret — o autor edita a nota como edita qualquer parágrafo.
+    /// O <c>Kind</c> existe para quem desenha (o filete vai acima da primeira delas) e para quem
+    /// reaproveita o layout (elas não voltam para o fluxo).
+    /// </remarks>
+    Footnote,
 }
 
 /// <summary>
@@ -36,4 +46,12 @@ public sealed record LaidOutLine(
     LineKind Kind = LineKind.Text)
 {
     public int SourceEnd => SourceStart + SourceLength;
+
+    /// <summary>Os identificadores das notas que esta linha chama. Vazia quase sempre.</summary>
+    /// <remarks>
+    /// É o que o page breaker pergunta para saber quanto de folha reservar antes de assentar a
+    /// linha: uma nota estreia na folha onde a <b>chamada</b> é desenhada, e a chamada está numa
+    /// linha, não num bloco — um parágrafo longo cai em várias folhas.
+    /// </remarks>
+    public IReadOnlyList<string> FootnoteCalls { get; init; } = [];
 }

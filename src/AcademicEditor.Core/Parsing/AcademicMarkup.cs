@@ -45,9 +45,22 @@ public static class AcademicMarkup
 
     private readonly record struct Span(SpanKind Kind, int Start, int ContentStart, int ContentEnd, int End);
 
-    public static IReadOnlyList<InlineRun> Parse(string text, int sourceStart, TextStyle baseStyle)
+    public static IReadOnlyList<InlineRun> Parse(string text, int sourceStart, TextStyle baseStyle) =>
+        Parse(text, sourceStart, baseStyle, out _);
+
+    /// <param name="calls">
+    /// As chamadas de nota encontradas, em ordem. Sai daqui porque é aqui que o <c>[^id]</c> é
+    /// reconhecido — reconstruir isso depois exigiria varrer os runs procurando um padrão.
+    /// </param>
+    public static IReadOnlyList<InlineRun> Parse(
+        string text,
+        int sourceStart,
+        TextStyle baseStyle,
+        out IReadOnlyList<FootnoteCall> calls)
     {
         ArgumentNullException.ThrowIfNull(text);
+
+        calls = [];
 
         // O caminho comum é a linha sem notação nenhuma, e ele não paga nada: nem varredura de
         // trechos, nem lista, nem substring. Vai direto para quem já cuidava dela.
@@ -57,6 +70,7 @@ public static class AcademicMarkup
         }
 
         var runs = new List<InlineRun>();
+        List<FootnoteCall>? found = null;
         var plain = 0;
         var position = 0;
 
@@ -71,8 +85,21 @@ public static class AcademicMarkup
             AddPlain(runs, text, sourceStart, baseStyle, plain, span.Start);
             AddSpan(runs, text, sourceStart, baseStyle, span);
 
+            if (span.Kind == SpanKind.Footnote)
+            {
+                found ??= [];
+                found.Add(new FootnoteCall(
+                    sourceStart + span.Start,
+                    text[span.ContentStart..span.ContentEnd]));
+            }
+
             position = span.End;
             plain = span.End;
+        }
+
+        if (found is not null)
+        {
+            calls = found;
         }
 
         AddPlain(runs, text, sourceStart, baseStyle, plain, text.Length);

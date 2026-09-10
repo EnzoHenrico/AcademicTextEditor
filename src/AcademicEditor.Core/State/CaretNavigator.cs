@@ -147,7 +147,9 @@ public static class CaretNavigator
             return At(caret.Offset - StepBefore(current, caret.Offset), document, measurer);
         }
 
-        var (previousPage, previousLine) = CaretGeometry.PreviousLine(document, page, line);
+        // Pelo TEXTO, e não pela folha: ← vai para o que se escreveu antes. Numa folha com nota
+        // de rodapé as duas deixam de ser a mesma coisa.
+        var (previousPage, previousLine) = CaretGeometry.PreviousInSource(document, page, line);
 
         if (previousPage < 0)
         {
@@ -178,7 +180,7 @@ public static class CaretNavigator
             return At(caret.Offset + StepAfter(current, caret.Offset), document, measurer);
         }
 
-        var (nextPage, nextLine) = CaretGeometry.NextLine(document, page, line);
+        var (nextPage, nextLine) = CaretGeometry.NextInSource(document, page, line);
 
         return nextPage < 0
             ? caret
@@ -286,7 +288,8 @@ public static class CaretNavigator
             return CaretAffinity.Downstream;
         }
 
-        var (nextPage, nextLine) = CaretGeometry.NextLine(document, page, line);
+        // Também pelo texto: a fronteira compartilhada é entre offsets, não entre posições na folha.
+        var (nextPage, nextLine) = CaretGeometry.NextInSource(document, page, line);
 
         return nextPage >= 0 && document.Pages[nextPage].Lines[nextLine].SourceStart == offset
             ? CaretAffinity.Upstream

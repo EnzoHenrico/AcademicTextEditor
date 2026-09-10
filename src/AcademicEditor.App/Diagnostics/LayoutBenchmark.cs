@@ -512,6 +512,19 @@ public static class LayoutBenchmark
             builder.Append('\n');
         }
 
+        // As definições no fim do arquivo, como numa tese de verdade. É o que faz a medição passar
+        // pelo caminho em que a ordem de desenho deixa de ser a de fonte.
+        for (var index = 1; markup && index <= note; index++)
+        {
+            builder.Append($"[^{index}]: ");
+
+            for (var word = 0; word < 12; word++)
+            {
+                builder.Append(vocabulary[SampleRank(zipf, random.NextDouble())]);
+                builder.Append(word == 11 ? "\n\n" : " ");
+            }
+        }
+
         return builder.ToString();
     }
 

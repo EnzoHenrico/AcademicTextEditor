@@ -80,6 +80,24 @@ public static class MarkupTokenizer
         var rest = line[alignmentLength..];
         var restStart = lineStart + alignmentLength;
 
+        // Antes do heading, e pelo mesmo desenho: marcação de bloco decidida no início da linha.
+        // Uma definição de nota nunca é heading, então a ordem entre os dois é indiferente — o que
+        // importa é que as duas vêm depois do alinhamento.
+        var footnote = ReadFootnoteDefinition(rest, out var idLength);
+
+        if (footnote > 0)
+        {
+            return new MarkupToken(
+                MarkupTokenKind.Footnote,
+                lineStart,
+                lineLength,
+                restStart + footnote,
+                Level: 0,
+                alignment,
+                alignmentLength,
+                idLength);
+        }
+
         var level = 0;
         while (level < rest.Length && rest[level] == '#')
         {
@@ -108,6 +126,51 @@ public static class MarkupTokenizer
             level,
             alignment,
             alignmentLength);
+    }
+
+    /// <summary>
+    /// Lê o <c>[^id]: </c> de uma definição de nota e devolve quantos caracteres ele ocupa, espaço
+    /// de separação incluso. Zero quando a linha não é uma definição.
+    /// </summary>
+    /// <remarks>
+    /// <b>Sem o espaço não é definição</b>, como no heading e no alinhamento: <c>[^1]:algo</c>
+    /// continua sendo texto. E o identificador não leva branco nem colchete — é rótulo, não texto —,
+    /// que é a mesma regra da chamada em <c>AcademicMarkup</c>. As duas precisam concordar, senão
+    /// existiria definição que nenhuma chamada casa.
+    /// </remarks>
+    private static int ReadFootnoteDefinition(ReadOnlySpan<char> line, out int idLength)
+    {
+        idLength = 0;
+
+        if (!line.StartsWith("[^", StringComparison.Ordinal))
+        {
+            return 0;
+        }
+
+        var end = 2;
+
+        while (end < line.Length && line[end] != ']' && !char.IsWhiteSpace(line[end]))
+        {
+            end++;
+        }
+
+        // Identificador vazio, sem fechamento, sem dois-pontos ou sem espaço: nada disso é
+        // definição, e a linha volta a ser texto comum.
+        if (end == 2 || end + 2 >= line.Length || line[end] != ']' || line[end + 1] != ':' || line[end + 2] != ' ')
+        {
+            return 0;
+        }
+
+        idLength = end - 2;
+
+        var content = end + 2;
+
+        while (content < line.Length && line[content] == ' ')
+        {
+            content++;
+        }
+
+        return content;
     }
 
     /// <summary>

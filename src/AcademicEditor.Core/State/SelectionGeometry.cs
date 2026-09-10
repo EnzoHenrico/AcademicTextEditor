@@ -48,25 +48,35 @@ public static class SelectionGeometry
         }
 
         var range = selection.Range;
-        var (page, line) = CaretGeometry.FindLine(range.Start, document, CaretAffinity.Downstream);
-        var (lastPage, lastLine) = CaretGeometry.FindLine(range.End, document, CaretAffinity.Upstream);
 
-        if (page < 0 || lastPage < 0)
+        // Percorre o ÍNDICE, em ordem de fonte: um trecho selecionado é um intervalo de texto, e a
+        // linha seguinte dele é a seguinte no arquivo — não a de baixo na folha. Enquanto as duas
+        // ordens coincidiam, comparar (folha, linha) dava no mesmo; com a nota de rodapé desenhada
+        // na folha da chamada, a comparação passaria a saltar ou repetir linhas.
+        var from = CaretGeometry.FindPosition(range.Start, document, CaretAffinity.Downstream);
+        var to = CaretGeometry.FindPosition(range.End, document, CaretAffinity.Upstream);
+
+        if (from < 0 || to < 0)
         {
             return [];
         }
 
         var rects = new List<SelectionRect>();
 
-        while (page >= 0 && (page < lastPage || (page == lastPage && line <= lastLine)))
+        for (var position = from; position <= to; position++)
         {
-            if (RectFor(document.Pages[page].Lines[line], page, range, measurer, document.Typography.Body)
+            var found = document.Index[position];
+
+            if (RectFor(
+                    document.Pages[found.PageIndex].Lines[found.LineIndex],
+                    found.PageIndex,
+                    range,
+                    measurer,
+                    document.Typography.Body)
                 is { } rect)
             {
                 rects.Add(rect);
             }
-
-            (page, line) = CaretGeometry.NextLine(document, page, line);
         }
 
         return rects;

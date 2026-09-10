@@ -153,6 +153,8 @@ public sealed class CaretGeometryTests
     [InlineData("nota[^1] e formula $E=mc^2$\n\ncorpo")]
     [InlineData("## \n\ncorpo")]
     [InlineData("a\n\n\n\nb")]
+    [InlineData("corpo com nota[^1]\n\n[^1]: a definicao")]
+    [InlineData("corpo\n\n[^1]: definicao que ninguem chama")]
     public void Todo_offset_do_documento_pertence_a_uma_linha(string source)
     {
         // Sem caret: é a configuração em que TODA marcação está escondida, e portanto a que tem

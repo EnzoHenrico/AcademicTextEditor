@@ -38,6 +38,16 @@ public static class PageRenderer
 
     // Tracejado, como a marca de quebra de página de um processador de texto: diz que ali há um
     // comando do autor, e não texto — e diz sem sujar a folha com a palavra "\page".
+    /// <summary>
+    /// O filete que separa o texto das notas de rodapé.
+    /// </summary>
+    /// <remarks>
+    /// Contínuo e curto — um terço da largura útil —, e não tracejado como o do <c>\page</c>: este
+    /// vai para o papel e é convenção tipográfica, aquele é marca de edição e some no PDF.
+    /// </remarks>
+    private static readonly IPen FootnoteRulePen =
+        new Pen(new SolidColorBrush(Color.FromRgb(0x50, 0x50, 0x50)), 0.6);
+
     private static readonly IPen PageBreakPen = new Pen(
         new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0x9A)),
         1.0,
@@ -283,6 +293,16 @@ public static class PageRenderer
                     contentTopDip + (rect.YPt * PtToDip),
                     rect.WidthPt * PtToDip,
                     rect.HeightPt * PtToDip));
+        }
+
+        if (page.FootnoteRulePt is { } rulePt)
+        {
+            var y = contentTopDip + (rulePt * PtToDip);
+
+            context.DrawLine(
+                FootnoteRulePen,
+                new Point(contentLeftDip, y),
+                new Point(contentLeftDip + (settings.ContentWidthPt * PtToDip / 3.0), y));
         }
 
         foreach (var line in page.Lines)

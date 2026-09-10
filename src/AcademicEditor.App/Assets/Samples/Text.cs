@@ -20,7 +20,7 @@ public static class Text
 
         A chamada de nota de rodapé é `[^1]`, e o que aparece é o identificador, sobrescrito[^1]. Uma fórmula vai entre cifrões — seja $E = mc^2$ a energia —, e sai em itálico, que é como uma variável se compõe. Nenhum dos dois é tipografado de verdade: o compositor de fórmulas é outra fase.
 
-        [^1]: Esta linha ainda é um parágrafo comum. Levá-la para o pé da folha é a fatia seguinte, e é ela que precisa mexer na enumeração de linhas do caret.
+        [^1]: Esta definição está escrita aqui, no meio do arquivo, e é desenhada lá embaixo — no pé da folha em que a chamada aparece, abaixo do filete. Uma definição que ninguém chama continua sendo parágrafo comum, no lugar onde foi escrita. Editá-la é editar um parágrafo: o caret pousa nela, a seleção a cobre, e as setas a atravessam.
 
         Este parágrafo não tem marcação de alinhamento, então vale o padrão da norma — justificado, com as duas margens retas. A sobra de cada linha é distribuída entre os vãos entre palavras, e a última linha do parágrafo fica de fora: ela terminou porque o texto acabou, não porque a margem a interrompeu.
 
