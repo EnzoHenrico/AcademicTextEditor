@@ -173,10 +173,14 @@ public static class LineBreaker
 
             if (line.SourceStart > previousEnd)
             {
+                // Os runs são relativos ao começo da linha, então recuar o começo empurra todos
+                // eles o mesmo tanto. É a única cópia de runs que sobrou nesta classe, e ela custa
+                // por bloco requebrado — não por linha reaproveitada, que é o caminho da tecla.
                 line = line with
                 {
                     SourceStart = previousEnd,
                     SourceLength = line.SourceEnd - previousEnd,
+                    Runs = ShiftIntoLine(line.Runs, line.SourceStart - previousEnd),
                 };
 
                 lines[index] = line;
@@ -191,8 +195,23 @@ public static class LineBreaker
 
         if (last.SourceEnd < runs[^1].SourceEnd)
         {
+            // Só o comprimento: esticar o fim não move o começo, e é do começo que os runs
+            // dependem.
             lines[^1] = last with { SourceLength = runs[^1].SourceEnd - last.SourceStart };
         }
+    }
+
+    /// <summary>Os mesmos runs, algumas posições adiante dentro da linha.</summary>
+    private static LaidOutRun[] ShiftIntoLine(IReadOnlyList<LaidOutRun> runs, int delta)
+    {
+        var moved = new LaidOutRun[runs.Count];
+
+        for (var index = 0; index < moved.Length; index++)
+        {
+            moved[index] = runs[index] with { LineOffset = runs[index].LineOffset + delta };
+        }
+
+        return moved;
     }
 
     /// <summary>
@@ -416,12 +435,14 @@ public static class LineBreaker
 
             var run = runs[_segmentRun];
 
+            // Relativo ao começo da linha, e não ao buffer: _sourceStart já está preenchido aqui,
+            // porque o primeiro Append o define antes de qualquer segmento ser fechado.
             _lineRuns.Add(new LaidOutRun(
                 run.Text.Substring(_segmentStart, _segmentLength),
                 run.Style,
                 _segmentXPt,
                 _segmentWidthPt,
-                run.SourceStart + _segmentStart));
+                run.SourceStart + _segmentStart - _sourceStart));
 
             _segmentRun = -1;
         }

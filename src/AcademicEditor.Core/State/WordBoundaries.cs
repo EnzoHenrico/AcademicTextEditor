@@ -38,15 +38,18 @@ public static class WordBoundaries
             return new TextRange(offset, 0);
         }
 
-        foreach (var run in document.Pages[page].Lines[line].Runs)
+        var found = document.Pages[page].Lines[line];
+        var local = offset - found.SourceStart;
+
+        foreach (var run in found.Runs)
         {
             // Expande dentro de um run só. Um run é um trecho contíguo de um estilo, então a
             // fronteira de estilo — o começo de um **negrito** — vale como fronteira de palavra:
             // são duas palavras diferentes na tela. Em texto comum a linha inteira é um run, que
             // é o caso que importa.
-            if (offset >= run.SourceStart && offset <= run.SourceEnd && run.Text.Length > 0)
+            if (local >= run.LineOffset && local <= run.LineEnd && run.Text.Length > 0)
             {
-                return Expand(run.Text, run.SourceStart, offset);
+                return Expand(run.Text, found.SourceStart + run.LineOffset, offset);
             }
         }
 
