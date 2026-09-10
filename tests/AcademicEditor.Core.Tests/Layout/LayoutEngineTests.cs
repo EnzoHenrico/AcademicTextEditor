@@ -129,11 +129,13 @@ public sealed class LayoutEngineTests
         var hiddenLine = hidden.Pages[0].Lines[0];
         var revealedLine = revealed.Pages[0].Lines[0];
 
-        Assert.Equal(2, hiddenLine.SourceStart);
+        // O que muda ao revelar é o TEXTO DESENHADO, e só ele. A linha cobre o bloco inteiro nos
+        // dois casos — com a marcação escondida o "# " tem posição na tela e largura zero.
         Assert.Equal("Tí", TextOf(hiddenLine));
-
-        Assert.Equal(0, revealedLine.SourceStart);
         Assert.Equal("# Tí", TextOf(revealedLine));
+
+        Assert.Equal(0, hiddenLine.SourceStart);
+        Assert.Equal(0, revealedLine.SourceStart);
     }
 
     // Só a largura muda. Se a altura mudasse, o documento inteiro subiria e desceria a cada vez que
@@ -182,15 +184,28 @@ public sealed class LayoutEngineTests
         Assert.False(document.RevealedBlock.Contains(9));
     }
 
-    // Heading recém-aberto com a marcação escondida: a linha tem de reivindicar o offset do texto,
-    // não o do sustenido, senão o caret pousa antes da marcação que ele nem vê.
+    /// <summary>
+    /// Heading recém-aberto com a marcação escondida: a linha cobre o bloco inteiro, sustenido e
+    /// tudo.
+    /// </summary>
+    /// <remarks>
+    /// <b>Este teste afirmava o contrário</b> — que a linha ancorava no texto, deixando os offsets
+    /// do <c>##&#160;</c> fora dela — e a razão registrada era "senão o caret pousa antes da
+    /// marcação que ele nem vê". A premissa expirou: desde que a marcação é revelada no bloco do
+    /// caret, quem pousa ali <i>vê</i>. O que sobrava era um buraco no mapa offset → linha, e um
+    /// buraco desses não fica onde nasceu: quem procura a linha de um offset descoberto acha a do
+    /// bloco <b>anterior</b>, e o caret é desenhado no parágrafo de cima.
+    /// </remarks>
     [Fact]
-    public void Heading_vazio_com_marcacao_escondida_ancora_no_texto()
+    public void Heading_vazio_com_marcacao_escondida_cobre_o_bloco_inteiro()
     {
         var line = Layout("## ", caretOffset: -1).Pages[0].Lines[0];
 
-        Assert.Equal(3, line.SourceStart);
-        Assert.Equal(0, line.SourceLength);
+        Assert.Equal(0, line.SourceStart);
+        Assert.Equal(3, line.SourceLength);
+
+        // E continua sem desenhar nada: cobrir não é revelar.
+        Assert.Empty(line.Runs);
     }
 
     [Fact]

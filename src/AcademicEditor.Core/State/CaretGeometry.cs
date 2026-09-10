@@ -54,8 +54,10 @@ public static class CaretGeometry
         ArgumentNullException.ThrowIfNull(line);
         ArgumentNullException.ThrowIfNull(measurer);
 
-        foreach (var run in line.Runs)
+        for (var index = 0; index < line.Runs.Count; index++)
         {
+            var run = line.Runs[index];
+
             // Offset num vão que a linha cobre mas nenhum run ocupa (a marcação de um heading,
             // por exemplo): o caret encosta no começo do run seguinte.
             if (offset < run.SourceStart)
@@ -63,10 +65,23 @@ public static class CaretGeometry
                 return run.XPt;
             }
 
-            if (offset <= run.SourceEnd)
+            if (offset > run.SourceEnd)
             {
-                return run.XPt + measurer.MeasureWidthPt(run.Text.AsSpan(0, offset - run.SourceStart), run.Style);
+                continue;
             }
+
+            // No fim de um run que encosta no seguinte, o caret pertence ao seguinte — é onde o
+            // texto está desenhado. Numa linha justificada o run de branco carrega a sobra dentro
+            // da própria largura, então terminar no run anterior deixaria o caret um vão atrás da
+            // palavra que ele deveria preceder.
+            if (offset == run.SourceEnd
+                && index + 1 < line.Runs.Count
+                && line.Runs[index + 1].SourceStart == offset)
+            {
+                return line.Runs[index + 1].XPt;
+            }
+
+            return run.XPt + measurer.MeasureWidthPt(run.Text.AsSpan(0, offset - run.SourceStart), run.Style);
         }
 
         return line.Runs.Count == 0 ? 0.0 : line.Runs[^1].XPt + line.Runs[^1].WidthPt;

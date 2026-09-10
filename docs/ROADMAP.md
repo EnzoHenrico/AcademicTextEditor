@@ -1422,30 +1422,55 @@ Registrado desta fatia:
 - **Pelo mesmo motivo, a nota não é numerada automaticamente.** O que aparece é o próprio
   identificador: `[^1]` mostra `1`, `[^nota]` mostra `nota`. `¹` não está no arquivo
 
-### Fatia 5a.1 — O caret não pousa fora da linha ⬜
+### Fatia 5a.1 — O caret não pousa fora da linha ✅
 
-Fatia corretiva: a marcação escondida deixa offsets **sem linha nenhuma**, e o caret é desenhado no
-parágrafo de cima. A 5a alargou o buraco; a Fatia 4 já o tinha alargado antes.
+Fatia corretiva: a marcação escondida deixava offsets **sem linha nenhuma**, e o caret era desenhado
+no parágrafo de cima. A 5a alargou o buraco; a Fatia 4 já o tinha alargado antes.
 
-- [ ] A primeira linha de um bloco ancora no **início do bloco**, mesmo com a marcação escondida —
-      o prefixo escondido vale largura zero. O mesmo pelo fim, para `line.SourceEnd`
-- [ ] `PreviousLine`/`NextLine` andam pelo índice, e não pelas folhas
-- [ ] O caret mantém a última posição válida enquanto uma repaginação da edição está em voo
+- [x] As linhas de um bloco passam a cobri-lo **inteiro** — `LineBreaker.ClaimHiddenGaps`
+- [x] Teste de propriedade: **todo offset do documento pertence a uma linha**, e o caret pousa nela
+- [x] O resíduo da Fatia 4.1: numa linha justificada, o caret entre palavras encosta na seguinte
 
-**O mapa offset → linha tem de ser total, e não é.** `BuildChunks` descarta os runs de marcação
-quando ela está escondida, e a linha ancora no primeiro chunk que ela de fato usa: num bloco que
-começa com `# `, `:-: ` ou `**negrito**`, os k primeiros offsets do bloco não pertencem a linha
-nenhuma. A busca os resolve para a **última linha do bloco anterior** — o caret aparece no parágrafo
-de cima. É o mesmo caso que `ColumnPt` já trata quando a marcação está no **meio** da linha
-(`offset < run.SourceStart` → começo do run seguinte); o que falta é a linha reivindicar as pontas.
+**O mapa offset → linha tem de ser total, e não era.** `BuildChunks` descarta os runs de marcação
+quando ela está escondida, e cada linha nascia ancorada no primeiro chunk que de fato usou: num
+bloco que começa com `# `, `:-: ` ou `**negrito**`, os primeiros offsets do bloco não pertenciam a
+linha nenhuma. `FindLine` os resolve para a **última linha do bloco anterior** — e o caret aparece
+no parágrafo de cima. É o mesmo caso que `ColumnPt` já tratava para a marcação no **meio** da linha
+(`offset < run.SourceStart` → começo do run seguinte); o que faltava era a linha reivindicar o vão.
 
-**A âncora da linha vazia continua como está.** A decisão da Fatia 5.1 da Fase 3 — um `## `
-recém-aberto não pode reivindicar o offset do sustenido — é sobre a linha **sem run nenhum**, e
-segue válida. Esta fatia mexe na linha que tem conteúdo.
+**O buraco não era só das pontas, e é isso que o teste de propriedade encontrou.** Quando a quebra
+por largura cai em cima de marcação escondida no meio do bloco, a linha de cima termina antes dela e
+a de baixo começa depois: o vão fica no **meio do parágrafo**. Um conserto só das pontas passaria
+verde nos exemplos e continuaria errado no documento de verdade. A regra virou uma só: *cada linha
+reivindica para trás até onde a anterior terminou*, e a primeira até o começo do bloco.
 
-**Fica junto o resíduo da Fatia 4.1:** a justificação infla a `WidthPt` do segmento de branco
-enquanto `ColumnPt` mede o texto, então o caret entre palavras fica `extraPt` à esquerda da
-seguinte. Preferir o run seguinte quando o offset é fronteira dos dois resolve, e é barato.
+**Reivindicar para trás, e não para a frente**, tem consequência e ela é desejável: a fronteira entre
+as duas linhas passa a ser **compartilhada**, exatamente como numa quebra por largura comum, e a
+`CaretAffinity` já sabe desempatar. E o offset da marcação de uma palavra fica com a linha em que a
+palavra está.
+
+Conferido com o medidor **real** e o preset da ABNT, sobre um documento com marcação no começo, no
+meio e no fim de blocos, blocos alinhados e grupos de brancos: **608 offsets, nenhum descoberto** e
+nenhum caret na folha errada. Com `ClaimHiddenGaps` desligado, 16 offsets descobertos.
+
+Registrado desta fatia:
+
+- **Dois testes quebraram, e os dois estavam certos ao quebrar** — ambos codificavam o contorno
+  antigo. `Heading_vazio_com_marcacao_escondida_ancora_no_texto` afirmava que a linha ancorava no
+  texto, e a razão registrada na Fatia 5.1 era "senão o caret pousa antes da marcação que ele nem
+  vê". **A premissa expirou na própria 5.1:** desde que a marcação é revelada no bloco do caret,
+  quem pousa ali *vê*. O que sobrava do contorno era o buraco
+- **Cobrir não é revelar.** A linha de um `## ` vazio cobre os três offsets do bloco e continua sem
+  desenhar run nenhum — o teste afirma as duas coisas juntas, senão a correção seria confundida com
+  "revelar sempre"
+- **As pontas do bloco saem dos próprios runs**, e não de um parâmetro novo: a invariante do
+  `InlineRun` é que todo caractere do bloco entra em exatamente um run, na ordem. O `LineBreaker`
+  não precisou saber o que é um bloco
+- **Saiu de escopo o `PreviousLine`/`NextLine` andando pelo índice**: o índice é da Fatia 5b, que
+  não está na `main`. O item vai junto com ele, que é onde ele passa a fazer diferença
+- **Saiu também "o caret mantém a última posição válida durante a repaginação".** Ele existia para
+  esconder este bug: com o mapa total, o offset sempre tem linha, e o pior caso passa a ser o caret
+  um quadro atrasado dentro da própria linha — que é o atraso que a tela inteira já tem
 
 ### Fatia 5b — Notas de rodapé no layout ⬜
 
