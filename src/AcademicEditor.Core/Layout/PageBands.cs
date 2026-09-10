@@ -77,7 +77,10 @@ public static class PageBands
             };
         }
 
-        return document with { Pages = pages };
+        // WithSameLines, e não 'with { Pages = ... }': o índice de linhas em ordem de fonte é
+        // reaproveitado, e este passe só acrescenta faixas às folhas — as listas de linhas
+        // continuam sendo os mesmos objetos. Quem conferir isso é o documento, não um comentário.
+        return document.WithSameLines(pages);
     }
 
     /// <remarks>

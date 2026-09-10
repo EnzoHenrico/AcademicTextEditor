@@ -261,7 +261,14 @@ public static class LayoutEngine
         TextRange revealed,
         CancellationToken cancellationToken)
     {
-        var previous = reuse.Previous.Pages.SelectMany(page => page.Lines).ToArray();
+        // O passeio é pelo ÍNDICE, que está em ordem de fonte — que é a ordem em que este laço
+        // casa linha com bloco. Achatar as folhas dava a ordem de DESENHO: hoje é a mesma coisa,
+        // mas com a nota de rodapé desenhada na folha da chamada elas divergem, e o
+        // reaproveitamento passaria a mapear bloco errado para linha errada. Isso não quebra o
+        // desenho, quebra o caret. De quebra some o array de dezesseis mil linhas que era
+        // materializado a cada tecla, e antes das guardas.
+        var previous = reuse.Previous.Index;
+        var lines = reuse.Previous.Pages;
         var breaker = new PageBreaker(settings.ContentHeightPt);
         var cursor = 0;
 
@@ -280,7 +287,7 @@ public static class LayoutEngine
 
             var first = cursor;
 
-            while (cursor < previous.Length && previous[cursor].SourceStart <= oldEnd)
+            while (cursor < previous.Count && previous[cursor].SourceStart <= oldEnd)
             {
                 cursor++;
             }
@@ -312,7 +319,9 @@ public static class LayoutEngine
 
             for (var line = first; line < cursor; line++)
             {
-                var reused = shift == 0 ? previous[line] : Shift(previous[line], shift);
+                var found = previous[line];
+                var original = lines[found.PageIndex].Lines[found.LineIndex];
+                var reused = shift == 0 ? original : Shift(original, shift);
 
                 breaker.AddLine(reused);
 
@@ -325,7 +334,7 @@ public static class LayoutEngine
             }
         }
 
-        return cursor == previous.Length
+        return cursor == previous.Count
             ? new PaginatedDocument(breaker.Build(), settings, revealed) { Typography = typography }
             : null;
     }
