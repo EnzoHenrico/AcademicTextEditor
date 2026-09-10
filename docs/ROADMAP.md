@@ -950,14 +950,24 @@ Registrado desta fatia:
 **Objetivo:** o que sai do editor passa a ser um trabalho acadêmico, e não um texto paginado —
 folha numerada, tipografia de norma, PDF, e as extensões de markup que uma tese usa.
 
-Oito fatias, nenhuma com mais de três tópicos — eram sete, e a 5 se partiu em duas ao ser
-desenhada, porque a metade que leva a nota ao pé da folha precisa de capacidades que o motor não
-tem. A ordem tem duas dependências reais e o resto é independente: a Fatia 2 precisa do preset da
-Fatia 1 para saber com que fonte desenhar o cabeçalho, e a Fatia 7 é a última porque um menu só
-oferece o que já existe. **O PDF vem logo
+Onze fatias, nenhuma com mais de três tópicos — eram sete; a 5 se partiu em duas ao ser desenhada,
+porque a metade que leva a nota ao pé da folha precisa de capacidades que o motor não tem, e mais
+três entraram depois **como correção** (4.1, 4.2 e 5a.1). A ordem tem duas dependências reais e o
+resto é independente: a Fatia 2 precisa do preset da Fatia 1 para saber com que fonte desenhar o
+cabeçalho, e a Fatia 7 é a última porque um menu só oferece o que já existe. **O PDF vem logo
 depois do cabeçalho de propósito:** ele é a prova da aposta que abriu o projeto — o motor de
 layout nasceu independente de tela —, e deixá-lo para o fim seria descobrir no fim se ela valia.
 Notas de rodapé e sumário fluem para dentro dele depois, sem tocá-lo.
+
+> **A entrega da 5b foi recusada, e as três fatias corretivas saíram daí.** A PR #6 tinha o gate
+> verde e o aplicativo quebrado em dois pontos que aparecem em menos de um minuto de digitação real:
+> espaços em branco passando da margem outra vez, e o caret se perdendo com a digitação lenta num
+> documento grande. **Nenhum dos dois é sutil, e nenhum dos dois foi visto pelo gate** — porque os
+> testes e as medições descreviam uma configuração que o aplicativo não executa: alinhado à
+> esquerda, corpo 11, num corpus sem uma única marcação inline. O aplicativo roda
+> `TypographyPreset.Abnt` — justificado, corpo 12 — sobre texto com `**negrito**`, `$math$`, `[^id]`
+> e `:-:`. As Fatias 4 e 5a entregaram exatamente nesse vão. As regras que saíram disso estão no
+> `CLAUDE.md`, sob "Uma fatia não é aceita pelo gate".
 
 ### Fatia 1 — Preset tipográfico e cromo da janela ✅
 
@@ -1239,6 +1249,97 @@ Registrado desta fatia:
   aí o caret pousa na margem esquerda em vez de no centro. É invisível na prática — com o caret na
   linha a marcação é revelada, e aí há runs
 
+### Fatia 4.1 — A margem volta a valer ✅
+
+Fatia corretiva: a Fatia 4 desfez a garantia da Fase 3, Fatia 5.3, e nada ficou vermelho.
+
+- [x] `LineExtents` em `Layout/` — **um dono só** para "até onde a linha chega": `ExtentPt` (crua),
+      `InkExtentPt` (a tinta) e `AlignExtentPt` (a extensão que **tem** de caber na margem, isto é,
+      a crua menos no máximo um branco). As cinco cópias divergentes passaram a chamá-lo
+- [x] `LineAlignment` alinha por `AlignExtentPt`, e não pela tinta — nos três alinhamentos
+- [x] As duas garantias da 5.3 viraram `MarginInvariants`, rodado nos **quatro** alinhamentos
+
+**A tolerância era estado da caneta, não medida.** O `LineBreaker` a aplica corretamente ao quebrar
+(`taken = fits + 1`: pendura um branco, desce o resto do grupo) — mas ela vivia inteira dentro
+daquele laço, e o passe de alinhamento roda **depois** dele. Alinhando pela tinta, `TrimEnd()`
+devolvia o grupo **inteiro** de brancos à sobra; a justificação encostava a tinta na margem e
+reemitia o grupo depois dela. `AlignExtentPt` é a mesma regra escrita como medida, e por isso os
+dois passes voltam a falar da mesma coisa.
+
+**Centralizar continua sendo pela tinta, com teto.** Um espaço final invisível não pode deslocar a
+linha meio caractere — é o que a Fatia 4 acertou —, mas o deslocamento nunca passa do que a
+tolerância permite pendurar: `Math.Min(tinta / 2, sobra alinhável)`. À direita o teto sempre morde,
+então lá é só a sobra alinhável.
+
+Medido com o medidor determinístico (margem 100pt, 10pt por caractere), antes da correção:
+
+| caso | extensão | |
+|---|---|---|
+| `"a  b   c    dddddddddddd"` justificado | **130pt** | 3 brancos fora |
+| `"ab cd    efghijklmno"` justificado | **140pt** | 4 brancos fora, e um vão interno de 60pt |
+| `"abc    "` à direita | **140pt** | 4 brancos fora |
+
+E conferido com o medidor **real**, no preset da ABNT, sobre texto com marcação inline, blocos
+centralizados e à direita, e grupos de brancos digitados de propósito: largura útil 451,28pt,
+branco de 3,81pt, **maior extensão 455,09pt** — a margem mais exatamente um branco. Com a correção
+desligada, a mesma conferência dá 470,35pt.
+
+Registrado desta fatia:
+
+- **O caso que mais dói não precisa da tolerância.** `"ab cd    efghijklmno"`: o grupo de quatro
+  brancos **cabia** dentro da margem e foi anexado pelo caminho feliz do line breaker. Era a
+  justificação sozinha que o tirava de dentro dela — e ainda abria um vão de 60pt entre duas
+  palavras, porque a largura daqueles quatro brancos virava sobra a distribuir
+- **Os dados que provam o bug já estavam no repositório.** `"a  b   c    dddddddddddd"` era
+  `InlineData` de dois testes da Fatia 4 e passava verde nos dois: um media só a tinta, o outro só a
+  ida e volta coluna ↔ offset. O dado estava certo; faltava a asserção
+- **A invariante é afirmada contra um número, não contra `AlignExtentPt`.** O alinhamento agora
+  *usa* aquela conta para decidir onde parar; afirmar a garantia com ela esconderia um erro dela
+- **A seleção pinta o branco pendurado**, e isso está certo: ele faz parte do trecho selecionado, e
+  um destaque que parasse antes dele diria que ele não está lá. O que era errado é que numa linha
+  justificada isso passava da margem pelo **grupo inteiro**; agora é um branco, por construção.
+  `SelectionGeometry.InkEndPt` chamava de tinta o que era extensão crua, e o nome foi corrigido
+  junto com a chamada
+- **Fica devido, e é da Fatia 5a.1:** a justificação infla a `WidthPt` do segmento de branco
+  enquanto `CaretGeometry.ColumnPt` mede o texto real, então o caret entre duas palavras fica
+  `extraPt` à esquerda da seguinte. Com a sobra de volta ao normal isso é fração de ponto; era
+  visível porque a sobra estava inflada por este bug
+
+### Fatia 4.2 — Uma tecla volta a custar uma tecla ⬜
+
+Fatia corretiva. **Medir antes de mexer:** nada aqui é otimizado sem número de antes e de depois.
+
+- [ ] A medição passa a descrever o aplicativo — preset `Abnt` ao lado do `Default`, corpus **com**
+      marcação, e uma rajada encadeada de teclas, inclusive **no fim do parágrafo**
+- [ ] `LayoutEngine.Reuse`: a guarda do caret compara o offset pós-edição com o intervalo **novo** do
+      bloco, e a travessia de bloco passa a requebrar **dois** blocos em vez de recusar
+- [ ] O deslocamento das linhas reaproveitadas deixa de copiar run a run
+
+**A guarda do caret compara duas convenções diferentes, e recusa quase sempre.** `dirtyWas` é o
+intervalo **pré-edição** do bloco e `caretOffset` chega **pós-edição**: digitar `d` no fim de um
+bloco `"abc"` dá `dirtyWas = (0,3)` e caret 4, `Contains` falso, e o motor pagina as 300 folhas do
+zero. **Toda tecla digitada no fim de um parágrafo**, que é como se escreve. Os testes não pegam
+porque passam o mesmo caret ao layout anterior e ao novo.
+
+**Travessia de bloco custa o documento inteiro, e um bloco é uma linha.** O custo "uma repaginação
+por travessia de bloco" foi aceito quando bloco queria dizer parágrafo; desde a Fatia 4.1 da Fase 3
+— *uma linha da fonte é uma linha na página* — um bloco **é** uma linha, então é uma repaginação
+completa por ↑/↓. Revelar e esconder tocam dois blocos, e requebrar dois cabe na máquina que já
+existe.
+
+**O reflow reaproveita a medição, não a estrutura** — e foi por isso que a justificação o encareceu
+sem que ninguém percebesse. `Shift` copia cada run de cada linha depois do bloco sujo: à esquerda
+são 1–2 runs por linha, justificado são ~20, porque o passe parte a linha em cada fronteira de
+branco. Digitar no **meio** desloca metade do documento, que é exatamente onde o sintoma aparece.
+
+Números de partida, do harness `--measure-layout` no preset `Default` sobre o corpus sem marcação —
+que é justamente a configuração que **não** é a do aplicativo, e por isso são o "antes" a bater:
+
+| | |
+|---|---|
+| tecla, incremental | 8,6 ms |
+| tecla, reflow total | 79,7 ms |
+
 ### Fatia 5a — Marcação acadêmica inline ✅
 
 A Fatia 5 se partiu em duas ao ser desenhada, e o corte não foi de conveniência: **a metade de
@@ -1279,6 +1380,31 @@ Registrado desta fatia:
 - **Pelo mesmo motivo, a nota não é numerada automaticamente.** O que aparece é o próprio
   identificador: `[^1]` mostra `1`, `[^nota]` mostra `nota`. `¹` não está no arquivo
 
+### Fatia 5a.1 — O caret não pousa fora da linha ⬜
+
+Fatia corretiva: a marcação escondida deixa offsets **sem linha nenhuma**, e o caret é desenhado no
+parágrafo de cima. A 5a alargou o buraco; a Fatia 4 já o tinha alargado antes.
+
+- [ ] A primeira linha de um bloco ancora no **início do bloco**, mesmo com a marcação escondida —
+      o prefixo escondido vale largura zero. O mesmo pelo fim, para `line.SourceEnd`
+- [ ] `PreviousLine`/`NextLine` andam pelo índice, e não pelas folhas
+- [ ] O caret mantém a última posição válida enquanto uma repaginação da edição está em voo
+
+**O mapa offset → linha tem de ser total, e não é.** `BuildChunks` descarta os runs de marcação
+quando ela está escondida, e a linha ancora no primeiro chunk que ela de fato usa: num bloco que
+começa com `# `, `:-: ` ou `**negrito**`, os k primeiros offsets do bloco não pertencem a linha
+nenhuma. A busca os resolve para a **última linha do bloco anterior** — o caret aparece no parágrafo
+de cima. É o mesmo caso que `ColumnPt` já trata quando a marcação está no **meio** da linha
+(`offset < run.SourceStart` → começo do run seguinte); o que falta é a linha reivindicar as pontas.
+
+**A âncora da linha vazia continua como está.** A decisão da Fatia 5.1 da Fase 3 — um `## `
+recém-aberto não pode reivindicar o offset do sustenido — é sobre a linha **sem run nenhum**, e
+segue válida. Esta fatia mexe na linha que tem conteúdo.
+
+**Fica junto o resíduo da Fatia 4.1:** a justificação infla a `WidthPt` do segmento de branco
+enquanto `ColumnPt` mede o texto, então o caret entre palavras fica `extraPt` à esquerda da
+seguinte. Preferir o run seguinte quando o offset é fronteira dos dois resolve, e é barato.
+
 ### Fatia 5b — Notas de rodapé no layout ⬜
 
 - [ ] **Run com texto exibido diferente do texto da fonte**, tratado como unidade indivisível pelo
@@ -1298,6 +1424,26 @@ consumidores da mesma enumeração.
 **A nota também é iterativa por natureza:** ela encolhe a altura útil da folha onde cai, o que pode
 empurrar a própria chamada para a folha seguinte, que leva a nota junto. O segundo passe precisa de
 uma regra de parada escrita antes do código, como a do sumário.
+
+**O que a tentativa recusada (PR #6) deixou de aprendizado, para não ser redescoberto:**
+
+- **A fatia se parte em três, e o corte não é de conveniência.** O índice em ordem de fonte
+  (`PaginatedDocument.Index` + `FindLine` por busca binária) é pré-requisito de tudo e não depende de
+  nada; a nota no pé da folha depende **dele**, não da capacidade da 5a; e a numeração automática
+  com `[@cite]` resolvido depende do run com texto exibido diferente do da fonte, que é outro
+  assunto. A 5a registrou que aquela capacidade destravava a nota no pé da folha — **está errado**:
+  o texto da definição é literal
+- **A reserva de altura não precisa de laço de convergência**, e foi a boa surpresa. A altura de uma
+  nota é conhecida *antes* de a linha que a chama ser assentada, bastando quebrar as definições
+  primeiro: se a linha **mais** as notas que ela estreia não cabem no que resta, as duas descem
+  juntas. O ponto fixo que este roadmap temia era do desenho antigo, em que a nota era descoberta
+  depois de a linha já estar posta
+- **`LayoutEngine.Reuse` achata as folhas em ordem de desenho e casa esse achatado com os blocos,
+  que estão em ordem de fonte.** Com a nota no pé da folha as duas deixam de coincidir, e o
+  reaproveitamento mapeia bloco errado para linha errada — que não quebra o desenho, quebra o caret.
+  Passar a andar pelo índice resolve, e é a costura entre esta fatia e a 4.2
+- **A entrega foi recusada com o gate verde.** Esta fatia só volta depois de 4.2 e 5a.1, e a
+  conferência no aplicativo é parte dela, não um extra
 
 ### Fatia 6 — Sumário automático ⬜
 

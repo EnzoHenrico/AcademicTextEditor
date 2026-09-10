@@ -231,7 +231,9 @@ public sealed class LayoutEngineTests
         // O trecho da fonte que a linha cobre é o mesmo — a marcação está no meio dela —, e o que
         // muda é a tinta: quatro asteriscos a mais.
         Assert.Equal(hidden.SourceLength, revealed.SourceLength);
-        Assert.Equal(InkEndPt(hidden) + (4 * Measurer.CharWidthPt), InkEndPt(revealed));
+        Assert.Equal(
+            LineExtents.ExtentPt(hidden) + (4 * Measurer.CharWidthPt),
+            LineExtents.ExtentPt(revealed));
     }
 
     // O negrito muda o estilo no meio da linha, e a quebra por largura tem de continuar caindo no
@@ -253,9 +255,6 @@ public sealed class LayoutEngineTests
             Assert.Equal(lines[index - 1].SourceEnd, lines[index].SourceStart);
         }
     }
-
-    private static double InkEndPt(LaidOutLine line) =>
-        line.Runs[^1].XPt + line.Runs[^1].WidthPt;
 
     private static string TextOf(LaidOutLine line) => string.Concat(line.Runs.Select(run => run.Text));
 
