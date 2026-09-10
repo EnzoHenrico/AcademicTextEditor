@@ -147,6 +147,46 @@ public static class LayoutEngine
             return null;
         }
 
+        // O bloco que o caret revela agora — a mesma regra do caminho completo, e por isso o último
+        // que contém o offset quando dois se encostam.
+        var revealIndex = BlockContaining(document, caretOffset);
+        var revealed = revealIndex < 0
+            ? TextRange.Empty
+            : RangeOf(document.Blocks[revealIndex]);
+
+        // O texto não mudou: é uma travessia de bloco, um clique ou uma seta que sai de um bloco e
+        // entra noutro. Nenhum offset se moveu — o que muda é qual bloco mostra a marcação, e são
+        // dois: o que a perde e o que a ganha.
+        //
+        // Sem este caminho, atravessar bloco recusava o reaproveitamento e repaginava tudo. O custo
+        // foi aceito quando "bloco" queria dizer parágrafo; desde que uma linha da fonte é uma
+        // linha na página, um bloco É uma linha — e o preço virou uma repaginação completa por ↑/↓.
+        if (reuse.LengthDelta == 0 && reuse.DirtyOldEnd == reuse.DirtyStart)
+        {
+            var losingIndex = IndexOfBlock(document, reuse.Previous.RevealedBlock);
+
+            // Havia marcação revelada e ela não casa com bloco nenhum: as linhas publicadas mostram
+            // uma marcação que já não deviam mostrar, e não há como saber quais. Pagina do zero.
+            if (reuse.Previous.RevealedBlock != TextRange.Empty && losingIndex < 0)
+            {
+                return null;
+            }
+
+            return Rebuild(
+                document,
+                settings,
+                measurer,
+                typography,
+                reuse,
+                shiftAfter: -1,
+                dirtyOldEnd: -1,
+                rebreakFirst: Math.Min(losingIndex, revealIndex),
+                rebreakSecond: Math.Max(losingIndex, revealIndex),
+                revealIndex,
+                revealed,
+                cancellationToken);
+        }
+
         var dirtyIndex = DirtyBlock(document, reuse.DirtyStart);
 
         if (dirtyIndex < 0 || document.Blocks[dirtyIndex] is PageBreakNode)
@@ -156,15 +196,71 @@ public static class LayoutEngine
 
         var dirty = document.Blocks[dirtyIndex];
         var dirtyWas = new TextRange(dirty.SourceStart, dirty.SourceLength - reuse.LengthDelta);
+        var dirtyIs = new TextRange(dirty.SourceStart, dirty.SourceLength);
 
         // Revelar a marcação muda a largura da linha, então um bloco que entrou ou saiu do caret
         // mudou de aparência sem ter mudado de texto. Reaproveitar só vale quando o bloco revelado
         // é o mesmo de antes E é o bloco sujo — que é o que acontece enquanto se digita.
-        if (!dirtyWas.Contains(caretOffset) || reuse.Previous.RevealedBlock != dirtyWas)
+        //
+        // As duas metades comparam coisas diferentes de propósito, e confundi-las custava caro:
+        // RevealedBlock veio do layout anterior e só case com o intervalo ANTIGO; o caretOffset
+        // chega DEPOIS da edição — quem digita move o caret e só então pede a repaginação —, então
+        // ele só cabe no intervalo NOVO. Comparar o caret novo com o intervalo antigo recusava toda
+        // tecla digitada no fim de um parágrafo, que é como se escreve: "abc" mais um "d" dá um
+        // intervalo antigo de 0..3 e um caret em 4, e o motor paginava as 300 folhas do zero.
+        if (!dirtyIs.Contains(caretOffset) || reuse.Previous.RevealedBlock != dirtyWas)
         {
             return null;
         }
 
+        return Rebuild(
+            document,
+            settings,
+            measurer,
+            typography,
+            reuse,
+            shiftAfter: dirtyIndex,
+            dirtyOldEnd: dirtyWas.End,
+            rebreakFirst: revealIndex < 0 ? dirtyIndex : Math.Min(dirtyIndex, revealIndex),
+            rebreakSecond: Math.Max(dirtyIndex, revealIndex),
+            revealIndex,
+            revealed,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Monta o documento novo aproveitando as linhas do anterior, requebrando <b>no máximo dois</b>
+    /// blocos: o que mudou de texto e o que mudou de revelação.
+    /// </summary>
+    /// <remarks>
+    /// Dois, e não um, porque revelar a marcação é uma troca: ela sai de um bloco e aparece noutro.
+    /// Um caminho que só soubesse requebrar um deles teria de recusar a travessia — que é o que ele
+    /// fazia, e o que tornava cada ↑/↓ uma repaginação completa.
+    /// </remarks>
+    /// <param name="shiftAfter">
+    /// Blocos depois deste andaram <c>LengthDelta</c> no buffer. <c>-1</c> quando o texto não mudou
+    /// e ninguém andou.
+    /// </param>
+    /// <param name="dirtyOldEnd">Fim antigo do bloco sujo; ignorado quando não há um.</param>
+    /// <param name="revealIndex">
+    /// O bloco que mostra a marcação agora. É <b>ele</b> que decide o <c>includeMarkup</c> de cada
+    /// requebra — passar <c>true</c> sempre, como este caminho fazia, deixaria o bloco que
+    /// <i>perdeu</i> a revelação requebrado com a marcação ainda à mostra.
+    /// </param>
+    private static PaginatedDocument? Rebuild(
+        DocumentNode document,
+        PageSettings settings,
+        ITextMeasurer measurer,
+        TypographyPreset typography,
+        LayoutReuse reuse,
+        int shiftAfter,
+        int dirtyOldEnd,
+        int rebreakFirst,
+        int rebreakSecond,
+        int revealIndex,
+        TextRange revealed,
+        CancellationToken cancellationToken)
+    {
         var previous = reuse.Previous.Pages.SelectMany(page => page.Lines).ToArray();
         var breaker = new PageBreaker(settings.ContentHeightPt);
         var cursor = 0;
@@ -177,9 +273,9 @@ public static class LayoutEngine
 
             // Antes do bloco sujo os offsets não se moveram; depois dele, todos andaram o mesmo
             // tanto. É o que torna o reaproveitamento uma soma, e não um recálculo.
-            var shift = index > dirtyIndex ? reuse.LengthDelta : 0;
-            var oldEnd = index == dirtyIndex
-                ? dirtyWas.End
+            var shift = shiftAfter >= 0 && index > shiftAfter ? reuse.LengthDelta : 0;
+            var oldEnd = index == shiftAfter
+                ? dirtyOldEnd
                 : block.SourceStart - shift + block.SourceLength;
 
             var first = cursor;
@@ -196,13 +292,15 @@ public static class LayoutEngine
                 return null;
             }
 
-            if (index == dirtyIndex)
+            // O marcador de quebra de página não tem marcação a revelar, e o texto dele não muda
+            // numa travessia: a linha anterior serve, e reaproveitá-la preserva o ForcePageBreak.
+            if ((index == rebreakFirst || index == rebreakSecond) && block is not PageBreakNode)
             {
                 foreach (var line in LineBreaker.BreakIntoLines(
                     block.Runs,
                     settings.ContentWidthPt,
                     measurer,
-                    includeMarkup: true,
+                    includeMarkup: index == revealIndex,
                     typography,
                     block.Alignment))
                 {
@@ -228,11 +326,68 @@ public static class LayoutEngine
         }
 
         return cursor == previous.Length
-            ? new PaginatedDocument(breaker.Build(), settings, new TextRange(dirty.SourceStart, dirty.SourceLength))
-            {
-                Typography = typography,
-            }
+            ? new PaginatedDocument(breaker.Build(), settings, revealed) { Typography = typography }
             : null;
+    }
+
+    private static TextRange RangeOf(BlockNode block) => new(block.SourceStart, block.SourceLength);
+
+    /// <summary>
+    /// O bloco cuja extensão contém o offset, ou -1. O <b>último</b> deles quando dois se encostam,
+    /// que é a mesma regra do caminho completo — lá o laço sobrescreve e o último vence.
+    /// </summary>
+    private static int BlockContaining(DocumentNode document, int offset)
+    {
+        if (offset < 0)
+        {
+            return -1;
+        }
+
+        var found = -1;
+
+        for (var index = 0; index < document.Blocks.Count; index++)
+        {
+            var block = document.Blocks[index];
+
+            // Os blocos saem do tokenizer em ordem: passado o offset, nenhum dos seguintes o contém.
+            if (block.SourceStart > offset)
+            {
+                break;
+            }
+
+            if (offset <= block.SourceStart + block.SourceLength)
+            {
+                found = index;
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>O bloco com exatamente esta extensão, ou -1 quando nenhum tem.</summary>
+    private static int IndexOfBlock(DocumentNode document, TextRange range)
+    {
+        if (range == TextRange.Empty)
+        {
+            return -1;
+        }
+
+        for (var index = 0; index < document.Blocks.Count; index++)
+        {
+            var block = document.Blocks[index];
+
+            if (block.SourceStart > range.Start)
+            {
+                break;
+            }
+
+            if (block.SourceStart == range.Start && block.SourceLength == range.Length)
+            {
+                return index;
+            }
+        }
+
+        return -1;
     }
 
     /// <summary>

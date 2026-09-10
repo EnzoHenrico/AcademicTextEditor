@@ -62,9 +62,84 @@ public sealed class LayoutReuseTests
         Assert.Equal(3, incremental);
     }
 
-    // O caret atravessou a fronteira do bloco: a marcação revelada mudou de lugar, então dois
-    // blocos mudaram de aparência sem ter mudado de texto. Aqui o motor tem de recusar — e recusar
-    // significa medir tudo de novo, como se não houvesse layout anterior.
+    /// <summary>
+    /// A tecla digitada no <b>fim</b> de um parágrafo reaproveita, que é como se escreve.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// O caret chega aqui <b>pós-edição</b> — quem digita move o caret e só então pede a
+    /// repaginação. Comparar esse caret com o intervalo <i>antigo</i> do bloco recusava toda tecla
+    /// no fim de um parágrafo, e o motor paginava o documento inteiro do zero a cada uma delas.
+    /// </para>
+    /// <para>
+    /// Nenhum teste pegava porque todos passavam o <b>mesmo</b> caret ao layout anterior e ao novo,
+    /// o que só descreve uma tecla digitada no meio do texto.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void Tecla_no_fim_do_paragrafo_reaproveita()
+    {
+        var before = Paragraphs(count: 10);
+
+        // Fim do primeiro bloco: "aa bb" ocupa 0..5, então o caret pré-edição está em 5.
+        var after = before.Insert(5, "X");
+        var reuse = LayoutReuse.Between(before, after, Layout(before, caretOffset: 5));
+
+        Assert.NotNull(reuse);
+        Assert.Equal(3, MeasureCalls(after, caretOffset: 6, reuse));
+        AssertSame(Layout(after, caretOffset: 6), Layout(after, caretOffset: 6, reuse));
+    }
+
+    /// <summary>
+    /// Atravessar bloco sem editar requebra <b>dois</b> blocos e reaproveita o resto.
+    /// </summary>
+    /// <remarks>
+    /// Revelar a marcação é uma troca: ela sai de um bloco e aparece noutro. O caminho incremental
+    /// só sabia requebrar um, então recusava — e recusar, num editor em que <i>uma linha da fonte é
+    /// uma linha na página</i>, custava uma repaginação completa a cada ↑/↓.
+    /// </remarks>
+    [Fact]
+    public void Travessia_de_bloco_requebra_dois_e_reaproveita_o_resto()
+    {
+        var source = Paragraphs(count: 10);
+        var previous = Layout(source, caretOffset: 0);
+        var reuse = LayoutReuse.Between(source, source, previous);
+
+        Assert.NotNull(reuse);
+
+        // Três medições por bloco requebrado — as duas palavras e o espaço —, e são dois blocos.
+        Assert.Equal(6, MeasureCalls(source, caretOffset: 7, reuse));
+        AssertSame(Layout(source, caretOffset: 7), Layout(source, caretOffset: 7, reuse));
+    }
+
+    /// <summary>
+    /// O bloco que <b>perde</b> a revelação é requebrado com a marcação escondida.
+    /// </summary>
+    /// <remarks>
+    /// A armadilha do caminho de dois blocos: requebrar sempre com <c>includeMarkup: true</c> era
+    /// correto enquanto o único bloco requebrado era o revelado. Com dois, o que perdeu a revelação
+    /// sairia mostrando o <c>## </c> depois de o caret ter saído dele.
+    /// </remarks>
+    [Fact]
+    public void O_bloco_que_perde_a_revelacao_esconde_a_marcacao()
+    {
+        const string Source = "# Tit\n\naa bb";
+
+        var previous = Layout(Source, caretOffset: 0);
+        var reuse = LayoutReuse.Between(Source, Source, previous);
+
+        Assert.NotNull(reuse);
+
+        var reused = Layout(Source, caretOffset: 9, reuse);
+
+        Assert.Equal("# Tit", TextOf(previous.Pages[0].Lines[0]));
+        Assert.Equal("Tit", TextOf(reused.Pages[0].Lines[0]));
+        AssertSame(Layout(Source, caretOffset: 9), reused);
+    }
+
+    // Editar num bloco com o caret noutro: aqui o motor continua tendo de recusar, porque o bloco
+    // sujo e o revelado são dois, e o revelado não é o que mudou de texto. Recusar significa medir
+    // tudo de novo, como se não houvesse layout anterior.
     [Fact]
     public void Caret_em_outro_bloco_e_recusado_e_remede_tudo()
     {
@@ -172,6 +247,8 @@ public sealed class LayoutReuseTests
 
     private static PaginatedDocument Layout(string source, int caretOffset, LayoutReuse? reuse = null) =>
         LayoutEngine.Layout(MarkupParser.Parse(source), Settings, Measurer, caretOffset, reuse);
+
+    private static string TextOf(LaidOutLine line) => string.Concat(line.Runs.Select(run => run.Text));
 
     /// <summary>Quantos trechos chegaram ao medidor — a testemunha de quanto foi refeito.</summary>
     private static int MeasureCalls(string source, int caretOffset, LayoutReuse? reuse)
