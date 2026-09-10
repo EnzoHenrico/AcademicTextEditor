@@ -16,7 +16,7 @@ public enum MarkupTokenKind
     /// <summary>Linha contendo apenas <c>\page</c>: quebra de página explícita.</summary>
     PageBreak,
 
-    /// <summary>Linha iniciada por <c>[^id]: </c>: definição de nota de rodapé.</summary>
+    /// <summary>Linha iniciada por <c>\note id </c>: definição de nota de rodapé.</summary>
     Footnote,
 }
 
@@ -44,8 +44,9 @@ public enum MarkupTokenKind
 /// linha — e para saber onde começa a marcação do heading, quando as duas convivem.
 /// </param>
 /// <param name="IdLength">
-/// Comprimento do identificador de uma definição de nota, entre <c>[^</c> e <c>]</c>; 0 nos demais.
-/// O identificador começa em <c>LineStart + AlignmentLength + 2</c> — não precisa de offset próprio.
+/// Comprimento do rótulo de uma definição de nota; 0 nos demais. Ele começa logo depois do
+/// marcador e do espaço que o segue, em
+/// <c>LineStart + AlignmentLength + MarkupTokenizer.FootnoteMarker.Length + 1</c>.
 /// </param>
 public readonly record struct MarkupToken(
     MarkupTokenKind Kind,

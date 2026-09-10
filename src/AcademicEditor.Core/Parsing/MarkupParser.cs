@@ -91,13 +91,12 @@ public static class MarkupParser
     }
 
     /// <summary>
-    /// <c>[^id]: texto</c> — a definição de uma nota de rodapé.
+    /// <c>\note id texto</c> — a definição de uma nota de rodapé.
     /// </summary>
     /// <remarks>
-    /// <b>O identificador não é marcação, e os colchetes são.</b> Escondida a marcação, a linha
-    /// mostra o rótulo sobrescrito seguido do texto — que é como a nota se lê no pé da folha. Um
-    /// identificador escondido junto com a pontuação deixaria a nota sem dizer a que chamada ela
-    /// responde.
+    /// <b>O rótulo não é marcação, e o marcador é.</b> Escondida a marcação, a linha mostra o
+    /// rótulo sobrescrito seguido do texto — que é como a nota se lê no pé da folha. Um rótulo
+    /// escondido junto com o marcador deixaria a nota sem dizer a que chamada ela responde.
     /// </remarks>
     private static FootnoteNode BuildFootnote(string source, MarkupToken token, TypographyPreset preset)
     {
@@ -107,7 +106,7 @@ public static class MarkupParser
         AddAlignmentMarkup(runs, source, token, style);
 
         var markupStart = token.LineStart + token.AlignmentLength;
-        var idStart = markupStart + AcademicMarkup.FootnoteOpen.Length;
+        var idStart = markupStart + MarkupTokenizer.FootnoteMarker.Length + 1;
         var idEnd = idStart + token.IdLength;
 
         runs.Add(new InlineRun(source[markupStart..idStart], markupStart, style, IsMarkup: true));

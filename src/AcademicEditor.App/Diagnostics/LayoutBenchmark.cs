@@ -516,7 +516,7 @@ public static class LayoutBenchmark
         // pelo caminho em que a ordem de desenho deixa de ser a de fonte.
         for (var index = 1; markup && index <= note; index++)
         {
-            builder.Append($"[^{index}]: ");
+            builder.Append($"\\note {index} ");
 
             for (var word = 0; word < 12; word++)
             {

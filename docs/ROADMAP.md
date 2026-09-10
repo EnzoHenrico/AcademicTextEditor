@@ -1552,7 +1552,7 @@ Registrado desta fatia:
 
 ### Fatia 5c — Notas de rodapé no pé da folha ✅
 
-- [x] `[^id]: texto` como bloco próprio, fora do fluxo; **definição nunca chamada continua sendo
+- [x] `\note id texto` como bloco próprio, fora do fluxo; **definição nunca chamada continua sendo
       parágrafo comum**, no lugar onde foi escrita — nenhum texto pode sumir da tela
 - [x] Reserva da altura das notas na folha, e as linhas delas assentadas no pé da área de conteúdo,
       abaixo de um filete
@@ -1570,7 +1570,13 @@ pelo **texto** (`PreviousInSource`/`NextInSource`, sobre o índice); ↑ e ↓ e
 e passou a percorrer posições do índice — a comparação antiga saltaria ou repetiria linhas assim
 que as duas ordens divergissem.
 
-**O identificador não é marcação, e os colchetes são.** Escondida a marcação, a definição se lê
+**Declarar e chamar são coisas diferentes, e a marcação também.** A definição usava a mesma notação
+da chamada — `[^1]: texto`, herdada do Markdown —, e na primeira vez que alguém foi escrever uma nota
+ficou claro que os mesmos colchetes ora punham o numeral na frase, ora abriam a nota no fim do
+arquivo. O marcador entrou na família do `\page`, que é onde mora a marcação que toma a linha
+inteira, e a chamada continua sendo `[^1]` no meio da frase.
+
+**O rótulo não é marcação, e o marcador é.** Escondida a marcação, a definição se lê
 `¹texto` — que é como a nota aparece no pé da folha. Um rótulo escondido junto com a pontuação
 deixaria a nota sem dizer a que chamada ela responde.
 
@@ -1614,6 +1620,14 @@ Registrado desta fatia:
 - **É a mesma falha que o `CLAUDE.md` descreve**, na terceira vez: invariante coberta num caminho
   só. A regra "a invariante roda em todos os caminhos que o aplicativo pode produzir" vale também
   para o caret, e não só para a margem — um `Kind` novo é um caminho novo
+- **A sintaxe da declaração foi trocada depois de a fatia estar pronta, e por UX e não por bug.**
+  `[^1]: texto` funcionava; o problema era a mesma tag servir a duas intenções. A forma
+  `\note id texto` custou o tokenizer, o parser e um sweep de dados de teste — nada do motor —, e é
+  a evidência de que a marcação de bloco compensa morar toda numa família só
+- **O texto de exemplo ganhou teste.** Ele já mentiu duas vezes: descreveu a nota como parágrafo
+  comum depois de ela ir para o pé da folha, e ensinou a declará-la com uma marcação que deixou de
+  existir. É o primeiro contato de quem abre o editor, e um exemplo que não funciona ensina errado
+  antes de qualquer documentação
 - **Fica devido: a nota sai no corpo do texto, em 12pt.** A ABNT quer corpo menor e entrelinhamento
   simples nas notas. É um `TextStyle` a mais no `TypographyPreset` e um espaçamento por estilo no
   line breaker — decisão de norma, não de layout, e entra junto com "Normas configuráveis"

@@ -10,6 +10,16 @@ public static class MarkupTokenizer
     /// <summary>Marcador de quebra de página explícita, sozinho numa linha.</summary>
     public const string PageBreakMarker = "\\page";
 
+    /// <summary>Marcador de definição de nota de rodapé: <c>\note id texto</c>.</summary>
+    /// <remarks>
+    /// <b>Declarar e chamar são coisas diferentes, e por isso a marcação é diferente.</b> A
+    /// definição usava a mesma notação da chamada — <c>[^1]: texto</c> —, herdada do Markdown, e
+    /// isso confundia: os mesmos colchetes ora punham o numeral na frase, ora abriam a nota no fim
+    /// do arquivo. O marcador entra na família do <c>\page</c>, que é onde mora a marcação que
+    /// toma a linha inteira, e a chamada continua sendo <c>[^1]</c> no meio da frase.
+    /// </remarks>
+    public const string FootnoteMarker = "\\note";
+
     /// <summary>Marcação de alinhamento, no início da linha e seguida de espaço.</summary>
     /// <remarks>
     /// É a notação que o próprio Markdown usa para alinhar coluna de tabela — <c>| :-- | :-: | --: |</c>
@@ -133,37 +143,45 @@ public static class MarkupTokenizer
     /// de separação incluso. Zero quando a linha não é uma definição.
     /// </summary>
     /// <remarks>
-    /// <b>Sem o espaço não é definição</b>, como no heading e no alinhamento: <c>[^1]:algo</c>
-    /// continua sendo texto. E o identificador não leva branco nem colchete — é rótulo, não texto —,
-    /// que é a mesma regra da chamada em <c>AcademicMarkup</c>. As duas precisam concordar, senão
-    /// existiria definição que nenhuma chamada casa.
+    /// <b>Sem o espaço não é definição</b>, como no heading e no alinhamento: <c>\note1 algo</c>
+    /// continua sendo texto. E o rótulo não leva branco — é rótulo, não texto —, que é a mesma
+    /// regra da chamada em <c>AcademicMarkup</c>. As duas precisam concordar, senão existiria
+    /// definição que nenhuma chamada casa.
     /// </remarks>
     private static int ReadFootnoteDefinition(ReadOnlySpan<char> line, out int idLength)
     {
         idLength = 0;
 
-        if (!line.StartsWith("[^", StringComparison.Ordinal))
+        // Marcador, UM espaço, rótulo, UM espaço — a mesma forma do "# " do heading: o marcador e o
+        // espaço que o segue são uma unidade, e os espaços que sobram depois do rótulo são folga.
+        var start = FootnoteMarker.Length + 1;
+
+        if (!line.StartsWith(FootnoteMarker, StringComparison.Ordinal)
+            || line.Length <= start
+            || line[FootnoteMarker.Length] != ' ')
         {
             return 0;
         }
 
-        var end = 2;
+        var end = start;
 
-        while (end < line.Length && line[end] != ']' && !char.IsWhiteSpace(line[end]))
+        // O rótulo não leva branco: é rótulo, não texto. Mesma regra da chamada em AcademicMarkup,
+        // e as duas precisam concordar — senão existiria definição que nenhuma chamada casa.
+        while (end < line.Length && !char.IsWhiteSpace(line[end]))
         {
             end++;
         }
 
-        // Identificador vazio, sem fechamento, sem dois-pontos ou sem espaço: nada disso é
-        // definição, e a linha volta a ser texto comum.
-        if (end == 2 || end + 2 >= line.Length || line[end] != ']' || line[end + 1] != ':' || line[end + 2] != ' ')
+        // Rótulo vazio, ou marcador sem texto depois dele: nada disso é definição, e a linha volta
+        // a ser texto comum.
+        if (end == start || end >= line.Length || line[end] != ' ')
         {
             return 0;
         }
 
-        idLength = end - 2;
+        idLength = end - start;
 
-        var content = end + 2;
+        var content = end;
 
         while (content < line.Length && line[content] == ' ')
         {

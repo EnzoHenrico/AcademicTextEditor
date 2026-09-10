@@ -86,7 +86,7 @@ internal static class LongDocument
         // deixa de ser a de fonte, porque cada uma é desenhada no pé da folha da sua chamada.
         for (var definition = 1; definition <= notes; definition++)
         {
-            builder.Append($"[^{definition}]: ");
+            builder.Append($"\\note {definition} ");
 
             for (var index = 0; index < 12; index++)
             {

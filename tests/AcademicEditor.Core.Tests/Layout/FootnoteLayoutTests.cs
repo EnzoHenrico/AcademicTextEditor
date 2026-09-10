@@ -27,7 +27,7 @@ public sealed class FootnoteLayoutTests
     [Fact]
     public void A_nota_e_assentada_no_pe_da_folha_da_chamada()
     {
-        var document = Layout("aaa[^1]\nbbb\nccc\nddd\neee\n[^1]: nota");
+        var document = Layout("aaa[^1]\nbbb\nccc\nddd\neee\n\\note 1 nota");
 
         Assert.Equal(2, document.Pages.Count);
 
@@ -61,7 +61,7 @@ public sealed class FootnoteLayoutTests
     [Fact]
     public void A_ordem_de_desenho_diverge_da_de_fonte_e_o_indice_conserta()
     {
-        var document = Layout("aaa[^1]\nbbb\nccc\nddd\neee\n[^1]: nota");
+        var document = Layout("aaa[^1]\nbbb\nccc\nddd\neee\n\\note 1 nota");
 
         Assert.Equal(
             [0, 8, 12, 24, 16, 20],
@@ -77,7 +77,7 @@ public sealed class FootnoteLayoutTests
     [Fact]
     public void Definicao_nunca_chamada_continua_sendo_paragrafo_comum()
     {
-        var document = Layout("aaa\n[^1]: nota");
+        var document = Layout("aaa\n\\note 1 nota");
 
         var page = Assert.Single(document.Pages);
 
@@ -95,7 +95,7 @@ public sealed class FootnoteLayoutTests
     [Fact]
     public void A_linha_que_chama_desce_junto_com_a_nota_que_nao_cabe()
     {
-        var document = Layout("aaa\nbbb\nccc\nddd[^1]\neee\n[^1]: nota");
+        var document = Layout("aaa\nbbb\nccc\nddd[^1]\neee\n\\note 1 nota");
 
         Assert.Equal(2, document.Pages.Count);
         Assert.Equal(["aaa", "bbb", "ccc"], document.Pages[0].Lines.Select(TextOf));
@@ -108,7 +108,7 @@ public sealed class FootnoteLayoutTests
     [Fact]
     public void Nota_chamada_duas_vezes_aparece_uma()
     {
-        var document = Layout("aaa[^1]\nbbb[^1]\n[^1]: nota");
+        var document = Layout("aaa[^1]\nbbb[^1]\n\\note 1 nota");
 
         var page = Assert.Single(document.Pages);
 
@@ -122,7 +122,7 @@ public sealed class FootnoteLayoutTests
     [Fact]
     public void Definicao_repetida_nao_some_da_tela()
     {
-        var document = Layout("aaa[^1]\n[^1]: uma\n[^1]: outra");
+        var document = Layout("aaa[^1]\n\\note 1 uma\n\\note 1 outra");
 
         var page = Assert.Single(document.Pages);
 
@@ -138,7 +138,7 @@ public sealed class FootnoteLayoutTests
     [Fact]
     public void Chamada_de_dentro_de_uma_nota_nao_conta()
     {
-        var document = Layout("aaa[^1]\n[^1]: veja[^2]\n[^2]: outra");
+        var document = Layout("aaa[^1]\n\\note 1 veja[^2]\n\\note 2 outra");
 
         var page = Assert.Single(document.Pages);
 
@@ -151,9 +151,9 @@ public sealed class FootnoteLayoutTests
     /// parágrafo. O mapa offset → linha continua total, com a nota fora do lugar em que foi escrita.
     /// </remarks>
     [Theory]
-    [InlineData("aaa[^1]\nbbb\nccc\nddd\neee\n[^1]: nota")]
-    [InlineData("aaa[^1]\nbbb[^2]\n[^1]: uma\n[^2]: outra")]
-    [InlineData("aaa\n[^1]: nunca chamada")]
+    [InlineData("aaa[^1]\nbbb\nccc\nddd\neee\n\\note 1 nota")]
+    [InlineData("aaa[^1]\nbbb[^2]\n\\note 1 uma\n\\note 2 outra")]
+    [InlineData("aaa\n\\note 1 nunca chamada")]
     public void Todo_offset_continua_pertencendo_a_uma_linha(string source)
     {
         var document = Layout(source);
@@ -172,8 +172,8 @@ public sealed class FootnoteLayoutTests
     /// folhas em ordem de desenho.
     /// </remarks>
     [Theory]
-    [InlineData("aaa[^1]\nbbb\nccc\nddd\neee\n[^1]: nota", "aaa[^1]\nbXbb\nccc\nddd\neee\n[^1]: nota", 10)]
-    [InlineData("aaa[^1]\nbbb\n[^1]: nota", "aaa[^1]\nbbb\n[^1]: nXota", 17)]
+    [InlineData("aaa[^1]\nbbb\nccc\nddd\neee\n\\note 1 nota", "aaa[^1]\nbXbb\nccc\nddd\neee\n\\note 1 nota", 10)]
+    [InlineData("aaa[^1]\nbbb\n\\note 1 nota", "aaa[^1]\nbbb\n\\note 1 nXota", 17)]
     public void Reaproveitar_devolve_o_mesmo_documento_com_notas(string before, string after, int caret)
     {
         var previous = LayoutEngine.Layout(MarkupParser.Parse(before), Settings, Measurer, caret - 1);
@@ -213,7 +213,7 @@ public sealed class FootnoteLayoutTests
     [Fact]
     public void O_caret_anda_por_dentro_da_nota()
     {
-        var document = Layout("aaa[^1]\n[^1]: nota");
+        var document = Layout("aaa[^1]\n\\note 1 nota");
         var note = document.Pages[0].Lines[^1];
 
         Assert.Equal(LineKind.Footnote, note.Kind);
