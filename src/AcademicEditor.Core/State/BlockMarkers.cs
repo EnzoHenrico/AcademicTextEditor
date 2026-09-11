@@ -13,10 +13,10 @@ namespace AcademicEditor.Core.State;
 /// relatado. A tecla de apagar tem de remover o marcador inteiro ou não tocá-lo.
 /// </para>
 /// <para>
-/// O cabeçalho de metadados é a mesma família vista pelo outro lado: ele não sai <b>nunca</b> por
-/// uma tecla de apagar. Apagar o <c>\n</c> que fecha a cerca desmancharia o cabeçalho inteiro — o
-/// <c>---</c> deixaria de estar sozinho na linha —, e o arquivo inteiro passaria a aparecer na
-/// folha de uma vez, sem que nada na tela explicasse por quê.
+/// <b>A fronteira do cabeçalho de metadados não mora aqui</b>, e já morou: ela depende do
+/// <i>texto</i>, não do layout, e o dono dela é <c>FrontMatter.BodyStart</c>. Derivá-la das linhas
+/// publicadas dava a resposta certa um quadro tarde — e o preço de um quadro tarde ali não é um
+/// caret fora do lugar, é o arquivo salvo com o cabeçalho desmanchado.
 /// </para>
 /// <para>
 /// Mora no Core, e não no ViewModel, porque a decisão depende do <see cref="PaginatedDocument"/> e
@@ -25,23 +25,10 @@ namespace AcademicEditor.Core.State;
 /// </remarks>
 public static class BlockMarkers
 {
-    /// <summary>
-    /// Trecho que o Backspace deve apagar, ou <c>null</c> se não há marcador em jogo.
-    /// </summary>
-    /// <remarks>
-    /// Um trecho <b>vazio</b> é a terceira resposta, e quer dizer "não apague nada": é o que a
-    /// fronteira do cabeçalho de metadados devolve. Quem consome já trata comprimento zero como
-    /// nada a fazer, então a recusa não precisa de um caminho próprio — e não abre grupo de undo
-    /// nem pede repaginação por uma tecla que não mudou o texto.
-    /// </remarks>
+    /// <summary>Trecho que o Backspace deve apagar, ou <c>null</c> se não há marcador em jogo.</summary>
     public static TextRange? BackspaceRange(int offset, PaginatedDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
-
-        if (IsBodyStart(offset, document))
-        {
-            return TextRange.Empty;
-        }
 
         // O caret está no próprio marcador: ele sai inteiro.
         if (MarkerAt(offset, document) is { } here)
@@ -107,25 +94,6 @@ public static class BlockMarkers
         }
 
         return null;
-    }
-
-    /// <summary>
-    /// O offset é o primeiro do corpo, logo depois do cabeçalho de metadados?
-    /// </summary>
-    /// <remarks>
-    /// Sai do documento publicado e não da fonte: o cabeçalho é a primeira linha da primeira folha,
-    /// então a resposta custa dois acessos. Reler a fonte para descobrir onde o corpo começa
-    /// materializaria o documento inteiro a cada Backspace.
-    /// </remarks>
-    public static bool IsBodyStart(int offset, PaginatedDocument document)
-    {
-        ArgumentNullException.ThrowIfNull(document);
-
-        var first = document.Pages[0].Lines;
-
-        return first.Count > 0
-            && first[0].Kind == LineKind.FrontMatter
-            && first[0].SourceEnd == offset;
     }
 
     private static IEnumerable<LaidOutLine> Markers(PaginatedDocument document) =>

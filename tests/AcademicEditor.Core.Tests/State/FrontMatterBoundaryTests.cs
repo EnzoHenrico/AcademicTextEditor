@@ -119,26 +119,15 @@ public sealed class FrontMatterBoundaryTests
         Assert.Equal(BodyStart, caret.Offset);
     }
 
-    /// <summary>
-    /// Backspace no primeiro offset do corpo não apaga nada.
-    /// </summary>
     /// <remarks>
-    /// O caractere atrás dele é o <c>\n</c> que fecha a cerca. Apagá-lo desmancharia o cabeçalho
-    /// inteiro — o <c>---</c> deixaria de estar sozinho na linha — e o arquivo todo apareceria na
-    /// folha de uma vez. O trecho vazio é a forma de dizer "não apague nada" a quem já trata
-    /// comprimento zero como nada a fazer.
+    /// A fronteira do cabeçalho <b>não</b> é do <c>BlockMarkers</c>: ela depende do texto, não do
+    /// layout, e quem a aplica é quem edita. O que se afirma aqui é que ele não inventa um marcador
+    /// onde não há um — quem guarda o arquivo é o teste de gravação, no projeto do App.
     /// </remarks>
     [Fact]
-    public void Backspace_no_comeco_do_corpo_nao_apaga_nada()
+    public void O_cabecalho_nao_e_um_marcador_de_bloco()
     {
-        var range = Assert.NotNull(BlockMarkers.BackspaceRange(BodyStart, Layout(Source)));
-
-        Assert.Equal(0, range.Length);
-    }
-
-    [Fact]
-    public void Backspace_dentro_do_corpo_continua_normal()
-    {
+        Assert.Null(BlockMarkers.BackspaceRange(BodyStart, Layout(Source)));
         Assert.Null(BlockMarkers.BackspaceRange(BodyStart + 3, Layout(Source)));
     }
 

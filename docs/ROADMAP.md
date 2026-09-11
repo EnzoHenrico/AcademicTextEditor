@@ -1747,9 +1747,29 @@ Registrado desta fatia:
 - **O `bib` é lido e guardado sem consumidor.** É a chave que existe para a Fatia 5c, e é o motivo
   desta fatia vir antes dela. Guardar um caminho que ninguém usa é aceitável; resolver `[@cite]`
   sem saber de onde vem o arquivo não era
-- **Não conferido:** abrir e salvar um `.md` com cabeçalho pelos diálogos, e a criação de um
-  cabeçalho digitando as cercas. Os dois passam pela `MainWindow` e pelo `EditorViewModel`, que
-  continuam sem teste — é o pedaço desta fatia que fica para o `./dev.sh run`
+- **"Não conferido: abrir e salvar" era a ressalva certa, e ela cobrava.** A primeira entrega
+  perdia o cabeçalho no arquivo salvo, e foi encontrada na conferência à mão. **Duas falhas, uma
+  causa:** as duas proteções — o caret grampeado e a recusa do Backspace — saíam do **layout
+  publicado**, e entre abrir um arquivo e a primeira paginação terminar há centenas de
+  milissegundos num documento longo. Uma tecla nessa janela entrava *dentro* do cabeçalho, e o
+  sintoma não é um caret fora do lugar: é o arquivo gravado com o cabeçalho desmanchado
+- **A fronteira é do texto, não do layout — e agora tem um dono só.** `FrontMatter.BodyStart` já
+  era esse dono; o que estava errado era derivar a mesma resposta de uma segunda fonte.
+  `BlockMarkers.IsBodyStart` foi **removido**: ele lia a fronteira das linhas publicadas, o que dá a
+  resposta certa um quadro tarde. O caret passa a nascer no começo do corpo calculado do próprio
+  texto — na construção e ao abrir —, e o Backspace compara com essa conta. O comentário do
+  `EditorViewModel` sobre "ler o layout publicado custa até um quadro de atraso" continua valendo
+  para a linha em branco do Enter; aqui o preço do atraso era outro
+- **`EditorViewModel` ganhou o primeiro teste, e ele é de gravação.** Sete casos que terminam num
+  `IDocumentStorage` falso e comparam o texto que foi para o disco: digitar, `Ctrl+A` e digitar,
+  Backspace na fronteira, arquivo CRLF, criar o cabeçalho digitando, e o fluxo de verdade — abrir,
+  **esperar a paginação** e só então editar. Três deles ficam vermelhos no código anterior. É o
+  quinto argumento a favor de `tests/AcademicEditor.App.Tests/` e o primeiro em que a consequência
+  não era visual, era o arquivo do autor
+- **Ressalva honesta sobre a correção:** o fluxo em estado estável — abrir, esperar o layout,
+  digitar, salvar — **já passava antes**, e continua passando. Os três vermelhos estão todos na
+  janela anterior à primeira paginação. Se o cabeçalho sumir de novo por um caminho fora dessa
+  janela, é caminho novo e não é este
 
 ### Fatia 7 — Modal de configurações e menu ⬜
 

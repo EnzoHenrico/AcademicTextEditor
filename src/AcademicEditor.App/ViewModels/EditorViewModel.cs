@@ -78,7 +78,8 @@ public sealed class EditorViewModel
 
         // No começo do documento, não no fim: é onde todo editor põe o caret ao abrir um
         // arquivo — e, com a rolagem automática, deixá-lo no fim abriria o app na última folha.
-        _selection = Selection.At(new Caret(0, 0.0));
+        StartAtBodyOf(initialText);
+
         Paginated = PaginatedDocument.Empty(pageSettings, _typography);
 
         SchedulePagination();
@@ -329,7 +330,12 @@ public sealed class EditorViewModel
             return;
         }
 
-        if (Caret.Offset == 0)
+        // Não atravessa o começo do corpo. Sem cabeçalho isto é o offset zero, como sempre foi;
+        // com cabeçalho, o caractere atrás do caret é o '\n' que fecha a cerca, e apagá-lo
+        // desmancharia o cabeçalho inteiro — o '---' deixaria de estar sozinho na linha e o
+        // arquivo todo apareceria na folha de uma vez. A conta vem do texto, e não do layout
+        // publicado: aqui um quadro de atraso não desalinha o caret, corrompe o arquivo salvo.
+        if (Caret.Offset <= _bodyStart)
         {
             return;
         }
@@ -712,8 +718,7 @@ public sealed class EditorViewModel
 
         FilePath = path;
         IsModified = false;
-        _selection = Selection.At(new Caret(0, 0.0));
-        _caretColumnStale = true;
+        StartAtBodyOf(loaded.Text);
         UpdateBandTitle();
 
         Report($"aberto {Path.GetFileName(path)}");
@@ -931,6 +936,30 @@ public sealed class EditorViewModel
         {
             Report(message);
         }
+    }
+
+    /// <summary>
+    /// Põe o caret no começo do <b>corpo</b> de um documento que acaba de chegar.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Do texto, e não do layout publicado</b>, e esta é a razão: entre abrir um arquivo e a
+    /// primeira paginação terminar há uma janela de centenas de milissegundos num documento longo,
+    /// e um caret no offset zero dentro dela manda a primeira tecla para <b>dentro</b> do
+    /// cabeçalho. Não é um defeito de tela — é o arquivo salvo com o cabeçalho desmanchado, que é
+    /// o pior tipo de defeito que este editor pode ter.
+    /// </para>
+    /// <para>
+    /// Normaliza antes de contar porque o buffer normaliza: num arquivo CRLF, cada linha do
+    /// cabeçalho tem um <c>\r</c> que o buffer não vai guardar, e o offset sairia adiantado.
+    /// A conta custa uma varredura por arquivo aberto, e não aloca quando não há <c>\r</c>.
+    /// </para>
+    /// </remarks>
+    private void StartAtBodyOf(string text)
+    {
+        _bodyStart = FrontMatter.BodyStart(LineEndings.NormalizeToLf(text));
+        _selection = Selection.At(new Caret(_bodyStart, 0.0));
+        _caretColumnStale = true;
     }
 
     /// <summary>O fim do cabeçalho de metadados, ou zero quando o documento não tem um.</summary>
