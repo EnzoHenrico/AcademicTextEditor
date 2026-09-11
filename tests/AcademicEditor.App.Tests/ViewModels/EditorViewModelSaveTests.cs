@@ -1,7 +1,11 @@
 using AcademicEditor.App.ViewModels;
 
+// Sem o alias, 'App' resolve para a classe App do Avalonia em vez do namespace.
+using Samples = AcademicEditor.App.Assets.Samples.Text;
+
 using AcademicEditor.Core.IO;
 using AcademicEditor.Core.Layout;
+using AcademicEditor.Core.Layout.Model;
 using AcademicEditor.Core.Parsing;
 using AcademicEditor.Core.Parsing.Ast;
 
@@ -169,6 +173,40 @@ public sealed class EditorViewModelSaveTests
         await editor.SaveAsAsync("/tmp/tese.md");
 
         Assert.Equal("---\ntitle: Uma tese\n---\ncorpo um\n\ncorpo dois", storage.Saved);
+    }
+
+    /// <summary>
+    /// O documento de exemplo abre com o cabeçalho escondido e volta inteiro para o disco.
+    /// </summary>
+    /// <remarks>
+    /// <b>É o CRLF que importa aqui</b>, e é de propósito que a <c>MainWindow</c> use essa variante:
+    /// cada linha do cabeçalho tem um <c>\r</c> que o buffer não guarda, então contar o começo do
+    /// corpo no texto cru o deixaria adiantado de um caractere por linha — e a primeira tecla cairia
+    /// dentro do cabeçalho. Uma regressão aqui aparece na primeira execução do aplicativo.
+    /// </remarks>
+    [Fact]
+    public async Task O_documento_de_exemplo_abre_com_o_cabecalho_escondido()
+    {
+        var storage = new CapturingStorage();
+        var editor = Editor(Samples.UniqueFeaturesCrLf, storage);
+
+        await WaitForLayout(editor);
+
+        // O cabeçalho existe, não desenha nada e não recebe o caret.
+        var first = editor.Paginated.Pages[0].Lines[0];
+
+        Assert.Equal(LineKind.FrontMatter, first.Kind);
+        Assert.Equal(0.0, first.HeightPt);
+        Assert.True(editor.Caret.Offset > 0, "o caret nasceu dentro do cabeçalho");
+
+        // E a norma sai do arquivo: o exemplo declara preset abnt.
+        Assert.Equal(TypographyPreset.Abnt, editor.Paginated.Typography);
+
+        editor.InsertText("X");
+
+        await editor.SaveAsAsync("/tmp/exemplo.md");
+
+        Assert.StartsWith("---\ntitle:", storage.Saved, StringComparison.Ordinal);
     }
 
     /// <summary>Espera a próxima publicação de layout, para que a tecla seguinte veja o estado novo.</summary>
