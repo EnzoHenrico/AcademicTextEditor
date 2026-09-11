@@ -44,8 +44,22 @@ public static class MarkupParser
         ArgumentNullException.ThrowIfNull(source);
 
         var typography = preset ?? TypographyPreset.Default;
-        var tokens = MarkupTokenizer.Tokenize(source);
-        var blocks = new List<BlockNode>(tokens.Count);
+        var bodyStart = FrontMatter.BodyStart(source);
+        var tokens = MarkupTokenizer.Tokenize(source, bodyStart);
+        var blocks = new List<BlockNode>(tokens.Count + 1);
+
+        if (bodyStart > 0)
+        {
+            blocks.Add(new FrontMatterNode(0, bodyStart));
+
+            // Arquivo que é só cabeçalho ainda precisa de uma linha de corpo: é onde o caret fica,
+            // e sem ela ele não teria altura nem posição — o mesmo motivo pelo qual o documento
+            // vazio produz uma linha vazia desde a Fatia 4.
+            if (tokens.Count == 0)
+            {
+                blocks.Add(new ParagraphNode(source.Length, 0, []));
+            }
+        }
 
         foreach (var token in tokens)
         {

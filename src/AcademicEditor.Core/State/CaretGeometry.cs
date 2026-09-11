@@ -151,7 +151,23 @@ public static class CaretGeometry
             return (-1, -1);
         }
 
-        var found = document.Index[Resolve(position, offset, document, affinity)];
+        var resolved = Resolve(position, offset, document, affinity);
+
+        // Um offset do cabeçalho de metadados cai numa linha que não recebe caret, e devolvê-la
+        // daria uma barra de altura zero — uma barra que sumiu da tela. Anda para a primeira que
+        // recebe, que é a primeira linha do corpo. Quem edita já grampeia o caret no começo do
+        // corpo; isto é a segunda tranca, para que nenhum caminho novo precise lembrar da primeira.
+        while (resolved < document.Index.Count && !LineOf(document, resolved).AcceptsCaret)
+        {
+            resolved++;
+        }
+
+        if (resolved >= document.Index.Count)
+        {
+            return (-1, -1);
+        }
+
+        var found = document.Index[resolved];
 
         return (found.PageIndex, found.LineIndex);
     }
@@ -168,6 +184,13 @@ public static class CaretGeometry
     /// </remarks>
     private static int FindIndex(int offset, PaginatedDocument document) =>
         document.FindLineIndex(offset);
+
+    private static LaidOutLine LineOf(PaginatedDocument document, int position)
+    {
+        var reference = document.Index[position];
+
+        return document.Pages[reference.PageIndex].Lines[reference.LineIndex];
+    }
 
     // A linha achada começa exatamente onde a anterior terminou? Então o offset serve às duas, e
     // quem escolhe é a afinidade. Só acontece em quebra por largura: numa quebra explícita o \n
@@ -186,9 +209,9 @@ public static class CaretGeometry
 
     /// <remarks>
     /// Duas coisas são puladas, e por motivos diferentes. <b>Página vazia</b> — que uma quebra
-    /// explícita dupla produz — não tem onde pousar. <b>Linha gerada</b> — a entrada de sumário —
-    /// não tem offset nenhum: parar nela daria ao caret uma posição que o buffer não tem, e é
-    /// exatamente a falha de offset que não quebra o desenho e quebra o caret.
+    /// explícita dupla produz — não tem onde pousar. <b>Linha que não aceita caret</b> — a entrada
+    /// de sumário e o cabeçalho de metadados — ou não tem offset nenhum, ou não tem altura onde
+    /// desenhar a barra. Parar em qualquer uma delas some com o caret da tela.
     /// </remarks>
     internal static (int PageIndex, int LineIndex) PreviousLine(PaginatedDocument document, int page, int line)
     {
@@ -204,7 +227,7 @@ public static class CaretGeometry
                 continue;
             }
 
-            if (!document.Pages[candidatePage].Lines[candidateLine].IsGenerated)
+            if (document.Pages[candidatePage].Lines[candidateLine].AcceptsCaret)
             {
                 return (candidatePage, candidateLine);
             }
@@ -230,7 +253,7 @@ public static class CaretGeometry
                 continue;
             }
 
-            if (!document.Pages[candidatePage].Lines[candidateLine].IsGenerated)
+            if (document.Pages[candidatePage].Lines[candidateLine].AcceptsCaret)
             {
                 return (candidatePage, candidateLine);
             }

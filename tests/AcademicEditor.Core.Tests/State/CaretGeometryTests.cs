@@ -155,6 +155,7 @@ public sealed class CaretGeometryTests
     [InlineData("a\n\n\n\nb")]
     [InlineData("\\toc\n\n# Titulo\n\ncorpo")]
     [InlineData("# Antes\n\n\\toc\n\n## Depois\n\ncorpo")]
+    [InlineData("---\ntitle: x\n---\n# Titulo\n\ncorpo")]
     public void Todo_offset_do_documento_pertence_a_uma_linha(string source)
     {
         // Sem caret: é a configuração em que TODA marcação está escondida, e portanto a que tem

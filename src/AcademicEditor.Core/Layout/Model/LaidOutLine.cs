@@ -20,10 +20,21 @@ public enum LineKind
     /// Entrada do sumário: título, condutor de pontos e número da folha.
     /// </summary>
     /// <remarks>
-    /// <b>A única linha que não tem posição na fonte</b>, e é isso que a separa das outras três. Ver
+    /// <b>A única linha que não tem posição na fonte</b>, e é isso que a separa das outras. Ver
     /// <see cref="LaidOutLine.IsGenerated"/>.
     /// </remarks>
     TocEntry,
+
+    /// <summary>
+    /// O cabeçalho de metadados do topo do arquivo: cobre o trecho e não desenha nada.
+    /// </summary>
+    /// <remarks>
+    /// <b>Tem offset e tem altura zero</b>, que é a combinação que nenhuma outra linha tem. O
+    /// offset mantém o mapa <c>offset → linha</c> total; a altura zero a faz não ocupar papel. O
+    /// caret não pousa nela — ver <see cref="LaidOutLine.AcceptsCaret"/> — porque uma barra de
+    /// altura zero é uma barra que sumiu da tela.
+    /// </remarks>
+    FrontMatter,
 }
 
 /// <summary>
@@ -73,4 +84,16 @@ public sealed record LaidOutLine(
     /// </para>
     /// </remarks>
     public bool IsGenerated => Kind == LineKind.TocEntry;
+
+    /// <summary>
+    /// O caret pode pousar nesta linha?
+    /// </summary>
+    /// <remarks>
+    /// <b>Pergunta diferente de <see cref="IsGenerated"/>, e por isso um nome diferente.</b> Aquela
+    /// decide quem entra no índice; esta, quem recebe o caret — e o cabeçalho de metadados responde
+    /// <i>sim</i> à primeira e <i>não</i> à segunda: ele tem posição na fonte, mas não tem altura
+    /// onde desenhar uma barra. Um marcador de bloco (<c>\page</c>, <c>\toc</c>) responde sim às
+    /// duas: é atômico, não invisível.
+    /// </remarks>
+    public bool AcceptsCaret => Kind is not (LineKind.TocEntry or LineKind.FrontMatter);
 }

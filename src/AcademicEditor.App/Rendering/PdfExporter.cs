@@ -52,7 +52,11 @@ public static class PdfExporter
     /// existiria para recuperar. Mover só é atômico dentro do mesmo volume, daí o temporário ficar
     /// ao lado do destino e não em /tmp.
     /// </remarks>
-    public static void Export(PaginatedDocument document, string path, string title = "")
+    public static void Export(
+        PaginatedDocument document,
+        string path,
+        string title = "",
+        string author = "")
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentException.ThrowIfNullOrEmpty(path);
@@ -72,7 +76,7 @@ public static class PdfExporter
         {
             using (var file = File.Create(temporary))
             {
-                Export(document, file, title);
+                Export(document, file, title, author);
             }
 
             File.Move(temporary, path, overwrite: true);
@@ -85,14 +89,21 @@ public static class PdfExporter
     }
 
     /// <summary>Escreve o PDF no fluxo dado. Não fecha o fluxo.</summary>
-    public static void Export(PaginatedDocument document, Stream stream, string title = "")
+    public static void Export(
+        PaginatedDocument document,
+        Stream stream,
+        string title = "",
+        string author = "")
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(stream);
 
+        // Título e autor saem do cabeçalho de metadados do .md quando ele os declara. É o que faz
+        // um leitor de PDF mostrar o nome do trabalho na barra do título em vez do nome do arquivo.
         var metadata = new SKDocumentPdfMetadata
         {
             Title = title,
+            Author = author,
             Creator = "AcademicEditor",
             Producer = "AcademicEditor",
         };

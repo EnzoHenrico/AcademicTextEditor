@@ -31,12 +31,17 @@ public static class MarkupTokenizer
 
     private const int MaxHeadingLevel = 6;
 
-    public static IReadOnlyList<MarkupToken> Tokenize(string source)
+    /// <param name="start">
+    /// Onde o corpo começa. É o fim do cabeçalho de metadados, quando há um: os offsets continuam
+    /// absolutos, então nada adiante precisa saber que o começo do arquivo ficou para trás.
+    /// </param>
+    public static IReadOnlyList<MarkupToken> Tokenize(string source, int start = 0)
     {
         ArgumentNullException.ThrowIfNull(source);
+        ArgumentOutOfRangeException.ThrowIfNegative(start);
 
         var tokens = new List<MarkupToken>();
-        var position = 0;
+        var position = start;
 
         while (position < source.Length)
         {

@@ -40,6 +40,14 @@ public sealed class EditorViewModel
 
     private Selection _selection;
     private bool _caretColumnStale = true;
+
+    // Onde o corpo começa: o fim do cabeçalho de metadados, ou zero quando não há um. Sai do
+    // documento publicado a cada layout, e não de uma nova leitura da fonte.
+    private int _bodyStart;
+
+    // O último cabeçalho lido. Guardado porque quem exporta o PDF precisa dele fora do laço de
+    // paginação, e reler a fonte ali seria a segunda resposta para a mesma pergunta.
+    private DocumentMetadata _metadata = DocumentMetadata.None;
     private DocumentEncoding _encoding = DocumentEncoding.Utf8;
 
     /// <param name="typography">
@@ -451,7 +459,11 @@ public sealed class EditorViewModel
         SelectRange(new TextRange(start, end - start));
     }
 
-    public void SelectAll() => SelectRange(new TextRange(0, _document.Length));
+    /// <remarks>
+    /// Do corpo, e não do arquivo: o cabeçalho de metadados não aparece na folha, e um
+    /// <c>Ctrl+A</c> seguido de qualquer tecla apagaria o que o autor não vê.
+    /// </remarks>
+    public void SelectAll() => SelectRange(new TextRange(_bodyStart, _document.Length - _bodyStart));
 
     /// <summary>Avança o alinhamento de todo bloco que a seleção toca.</summary>
     /// <remarks>
@@ -668,11 +680,16 @@ public sealed class EditorViewModel
         ArgumentException.ThrowIfNullOrEmpty(path);
 
         var document = Paginated;
-        var title = FilePath is { } current
-            ? Path.GetFileNameWithoutExtension(current)
-            : Path.GetFileNameWithoutExtension(path);
 
-        await Task.Run(() => PdfExporter.Export(document, path, title)).ConfigureAwait(true);
+        // O título do cabeçalho ganha do nome do arquivo — é o nome do trabalho, e é ele que o
+        // leitor de PDF mostra. Sem cabeçalho, continua sendo o nome do arquivo.
+        var title = _metadata.Title ?? (FilePath is { } current
+            ? Path.GetFileNameWithoutExtension(current)
+            : Path.GetFileNameWithoutExtension(path));
+
+        var author = _metadata.Author ?? string.Empty;
+
+        await Task.Run(() => PdfExporter.Export(document, path, title, author)).ConfigureAwait(true);
 
         Report($"exportado para {Path.GetFileName(path)}");
     }
@@ -804,7 +821,14 @@ public sealed class EditorViewModel
                 var laidOut = await Task.Run(() =>
                 {
                     var source = snapshot.GetText();
-                    var ast = MarkupParser.Parse(source, typography);
+
+                    // O cabeçalho manda no preset e no título, e é lido ANTES do parser porque o
+                    // corpo dos títulos sai da norma. As propriedades do ViewModel passam a ser o
+                    // padrão de quem não declarou nada — e assim não há atribuição de volta, nem
+                    // o laço de repaginação que ela traria.
+                    var metadata = DocumentMetadata.From(source);
+                    var norm = metadata.NormOver(typography);
+                    var ast = MarkupParser.Parse(source, norm);
 
                     // Paginar, preencher o sumário e montar as faixas são três passes com uma
                     // ordem obrigatória, e quem a conhece é o LayoutEngine: montá-la aqui seria a
@@ -816,18 +840,25 @@ public sealed class EditorViewModel
                             ast,
                             settings,
                             _measurer,
-                            bands,
+                            metadata.BandsOver(bands),
                             caretOffset,
                             LayoutReuse.Between(published.Source, source, published.Document),
-                            typography),
+                            norm),
 
                         // Contar aqui é de graça: a fonte inteira já está materializada para o
                         // parser, e a varredura é uma passada sem alocar. Na UI thread, a cada
                         // tecla, seria um megabyte percorrido no caminho do teclado.
-                        Statistics: DocumentStatistics.Of(source));
+                        //
+                        // Do corpo, e não do arquivo: o cabeçalho não é texto do trabalho, e
+                        // contá-lo faria o número da barra discordar do que está na folha.
+                        Statistics: DocumentStatistics.Of(source.AsSpan(FrontMatter.BodyStart(source))),
+                        Metadata: metadata);
                 }).ConfigureAwait(true);
 
+                _metadata = laidOut.Metadata;
+
                 Publish(laidOut.Document, laidOut.Source, laidOut.Statistics);
+                ReportUnknownPreset(laidOut.Metadata);
             }
         }
         catch (Exception exception)
@@ -846,6 +877,17 @@ public sealed class EditorViewModel
     {
         Paginated = paginated;
         _publishedSource = source;
+        _bodyStart = BodyStartOf(paginated);
+
+        // O caret não fica dentro do cabeçalho, e a garantia é aqui em vez de em cada tecla: o
+        // cabeçalho pode nascer embaixo do caret — basta o autor fechar a cerca digitando —, e
+        // cada caminho de edição que tivesse de saber disso seria um caminho para esquecer.
+        if (Caret.Offset < _bodyStart)
+        {
+            _selection = Selection.At(new Caret(_bodyStart, 0.0));
+            _caretColumnStale = true;
+        }
+
         SetStatistics(statistics);
 
         if (_caretColumnStale)
@@ -865,5 +907,37 @@ public sealed class EditorViewModel
 
         RefreshCaretPosition();
         Invalidated?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Avisa na barra de status quando o cabeçalho pede uma norma que não existe.
+    /// </summary>
+    /// <remarks>
+    /// <b>Chave desconhecida é silêncio; valor desconhecido é aviso.</b> Quem escreveu
+    /// <c>preset: abtn</c> receberia o documento composto na norma errada sem nada na tela dizendo
+    /// por quê — que é a wrongness silenciosa que este editor evita. Só avisa quando a mensagem
+    /// muda: senão a barra seria reescrita a cada tecla.
+    /// </remarks>
+    private void ReportUnknownPreset(DocumentMetadata metadata)
+    {
+        if (metadata.PresetName is not { } name || metadata.Typography is not null)
+        {
+            return;
+        }
+
+        var message = $"preset desconhecido no cabeçalho: {name}";
+
+        if (StatusMessage != message)
+        {
+            Report(message);
+        }
+    }
+
+    /// <summary>O fim do cabeçalho de metadados, ou zero quando o documento não tem um.</summary>
+    private static int BodyStartOf(PaginatedDocument paginated)
+    {
+        var first = paginated.Pages[0].Lines;
+
+        return first.Count > 0 && first[0].Kind == LineKind.FrontMatter ? first[0].SourceEnd : 0;
     }
 }

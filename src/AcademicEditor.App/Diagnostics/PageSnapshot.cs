@@ -58,13 +58,18 @@ public static class PageSnapshot
 
         // Pelo LayoutEngine.Publish, e não pelos passes um a um: a conferência tem de ver
         // exatamente o documento que o aplicativo publica. Montar a sequência aqui foi o primeiro
-        // defeito que esta ferramenta pegou — dela mesma, num sumário sem número nenhum.
+        // defeito que esta ferramenta pegou — dela mesma, num sumário sem número nenhum. Pelo mesmo
+        // motivo o cabeçalho de metadados vale aqui: um documento que declara outra norma tem de
+        // ser conferido nela.
+        var metadata = DocumentMetadata.From(source);
+        var norm = metadata.NormOver(DocumentConfiguration.Typography);
+
         var paginated = LayoutEngine.Publish(
-            MarkupParser.Parse(source, DocumentConfiguration.Typography),
+            MarkupParser.Parse(source, norm),
             settings,
             measurer,
-            DocumentConfiguration.Bands,
-            preset: DocumentConfiguration.Typography);
+            metadata.BandsOver(DocumentConfiguration.Bands),
+            preset: norm);
 
         var pageWidthDip = settings.WidthPt * PageRenderer.PtToDip;
         var pageHeightDip = settings.HeightPt * PageRenderer.PtToDip;
