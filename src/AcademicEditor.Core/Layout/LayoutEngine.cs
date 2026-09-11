@@ -32,6 +32,41 @@ public static class LayoutEngine
     /// resultado obsoleto — abandonar cedo devolve a thread em vez de terminar um cálculo que
     /// ninguém vai publicar.
     /// </param>
+    /// <summary>
+    /// O documento pronto para desenhar: paginado, com o sumário preenchido e com as faixas
+    /// montadas.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Um dono só para a ordem dos passes.</b> São três — paginar, escrever os números do
+    /// sumário, montar cabeçalho e rodapé — e os dois últimos dependem de o primeiro ter terminado,
+    /// porque número de folha não existe antes de haver folha. Quem montasse a sequência por conta
+    /// própria acabaria por esquecer um passe, e o sintoma seria um sumário sem número nenhum numa
+    /// tela e com número noutra.
+    /// </para>
+    /// <para>
+    /// Nenhum dos dois passes muda geometria: as entradas do sumário já estão assentadas com a
+    /// altura certa, e a reserva do cabeçalho é fixa. É o que mantém o <c>{pages}</c> correto
+    /// mesmo sendo resolvido por último.
+    /// </para>
+    /// </remarks>
+    public static PaginatedDocument Publish(
+        DocumentNode document,
+        PageSettings settings,
+        ITextMeasurer measurer,
+        HeaderFooterSettings bands,
+        int caretOffset = -1,
+        LayoutReuse? reuse = null,
+        TypographyPreset? preset = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(bands);
+
+        var paginated = Layout(document, settings, measurer, caretOffset, reuse, preset, cancellationToken);
+
+        return PageBands.Apply(TableOfContents.Apply(paginated, document, measurer), bands, measurer);
+    }
+
     public static PaginatedDocument Layout(
         DocumentNode document,
         PageSettings settings,
@@ -73,6 +108,10 @@ public static class LayoutEngine
 
         var revealed = TextRange.Empty;
 
+        // Só é montada se houver um \toc: percorrer os blocos e concatenar o texto de cada título
+        // não é de graça num documento de dezesseis mil linhas, e quem não pede sumário não paga.
+        List<TableOfContents.Heading>? headings = null;
+
         foreach (var block in document.Blocks)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -84,6 +123,18 @@ public static class LayoutEngine
             if (reveals)
             {
                 revealed = new TextRange(block.SourceStart, block.SourceLength);
+            }
+
+            if (block is TocNode)
+            {
+                headings ??= TableOfContents.Collect(document);
+
+                foreach (var line in TocLines(block, headings, settings, measurer, typography))
+                {
+                    breaker.AddLine(line);
+                }
+
+                continue;
             }
 
             if (block is PageBreakNode)
@@ -271,6 +322,7 @@ public static class LayoutEngine
         var lines = reuse.Previous.Pages;
         var breaker = new PageBreaker(settings.ContentHeightPt);
         var cursor = 0;
+        List<TableOfContents.Heading>? headings = null;
 
         for (var index = 0; index < document.Blocks.Count; index++)
         {
@@ -297,6 +349,21 @@ public static class LayoutEngine
             if (cursor == first)
             {
                 return null;
+            }
+
+            // O sumário é sempre remontado, e não reaproveitado: as entradas não estão no índice
+            // — não têm offset —, então este laço nem as vê. Remontar também é o que faz um título
+            // editado aparecer no sumário na mesma tecla, sem caso especial para isso.
+            if (block is TocNode)
+            {
+                headings ??= TableOfContents.Collect(document);
+
+                foreach (var line in TocLines(block, headings, settings, measurer, typography))
+                {
+                    breaker.AddLine(line);
+                }
+
+                continue;
             }
 
             // O marcador de quebra de página não tem marcação a revelar, e o texto dele não muda
@@ -337,6 +404,43 @@ public static class LayoutEngine
         return cursor == previous.Count
             ? new PaginatedDocument(breaker.Build(), settings, revealed) { Typography = typography }
             : null;
+    }
+
+    /// <summary>
+    /// O marcador <c>\toc</c> mais as entradas que ele reserva.
+    /// </summary>
+    /// <remarks>
+    /// <b>As entradas saem daqui já com os títulos, e sem os números.</b> Quantas linhas cada uma
+    /// ocupa não depende do número — a coluna dele tem largura reservada —, então o segundo passe
+    /// pode preenchê-los sem mover uma folha. É o mesmo desenho do <c>{pages}</c> do cabeçalho.
+    /// </remarks>
+    private static List<LaidOutLine> TocLines(
+        BlockNode block,
+        IReadOnlyList<TableOfContents.Heading> headings,
+        PageSettings settings,
+        ITextMeasurer measurer,
+        TypographyPreset typography)
+    {
+        var metrics = typography.Apply(measurer.GetLineMetrics(typography.Body));
+
+        // O marcador vem primeiro e é uma linha como a do \page: tem offset, o caret pousa nele
+        // como unidade e as teclas de apagar o removem inteiro.
+        var lines = new List<LaidOutLine>(headings.Count + 1)
+        {
+            new(
+                YPt: 0.0,
+                metrics.HeightPt,
+                metrics.BaselinePt,
+                [],
+                block.SourceStart,
+                block.SourceLength,
+                LineKind.TableOfContents),
+        };
+
+        lines.AddRange(TableOfContents.Build(
+            headings, pages: null, settings.ContentWidthPt, measurer, typography));
+
+        return lines;
     }
 
     private static TextRange RangeOf(BlockNode block) => new(block.SourceStart, block.SourceLength);

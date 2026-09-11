@@ -33,6 +33,11 @@ public sealed class LayoutReuseTests
     [InlineData("# Tít\n\ncorpo", "# Títu\n\ncorpo", 6)]
     // Sobre uma quebra de página, que é linha atômica e força folha nova.
     [InlineData("aaa\n\n\\page\n\nbbb ccc", "aaa\n\n\\page\n\nbbb Xccc", 16)]
+    // Com sumário: as entradas dele não estão no índice, então o laço do reaproveitamento nem as
+    // vê — quem as devolve é a remontagem do bloco \toc, e é isso que este caso guarda.
+    [InlineData("\\toc\n\n# Tit\n\ncorpo", "\\toc\n\n# Tit\n\ncorpoX", 20)]
+    // Editar o próprio título: o texto da entrada muda junto, na mesma tecla.
+    [InlineData("\\toc\n\n# Tit\n\ncorpo", "\\toc\n\n# Titu\n\ncorpo", 11)]
     public void Reaproveitar_devolve_o_mesmo_documento_que_paginar_do_zero(string before, string after, int caret)
     {
         var previous = Layout(before, caret);
@@ -88,6 +93,43 @@ public sealed class LayoutReuseTests
         Assert.NotNull(reuse);
         Assert.Equal(3, MeasureCalls(after, caretOffset: 6, reuse));
         AssertSame(Layout(after, caretOffset: 6), Layout(after, caretOffset: 6, reuse));
+    }
+
+    /// <summary>
+    /// Com sumário, a tecla continua custando uma tecla — mais o sumário.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>O guard conta medições, não milissegundos</b>, pela mesma razão da Fatia 4.2: um teto de
+    /// tempo passa verde numa máquina rápida com o reflow recusando toda tecla.
+    /// </para>
+    /// <para>
+    /// <b>E o número não é o mesmo de um documento sem sumário</b>, de propósito. As entradas são
+    /// remontadas a cada publicação — é o que faz um título editado aparecer no sumário na mesma
+    /// tecla —, e isso custa medir os títulos outra vez. O custo é proporcional ao número de
+    /// títulos, não ao tamanho do documento, e é o que este teste pina: com o cache de medição do
+    /// aplicativo por baixo, cada uma dessas medições é busca em dicionário.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void Com_sumario_a_tecla_continua_reaproveitando()
+    {
+        var before = "\\toc\n\n# Tit\n\n" + Paragraphs(count: 10);
+        var after = before.Insert(before.Length - 1, "X");
+        var caret = after.Length - 1;
+
+        var reuse = LayoutReuse.Between(before, after, Layout(before, caret));
+
+        Assert.NotNull(reuse);
+
+        var full = MeasureCalls(after, caret, reuse: null);
+        var incremental = MeasureCalls(after, caret, reuse);
+
+        // A conta fecha inteira, e é ela que diz de onde vem cada medição: o caminho completo mede
+        // os dez parágrafos (3 cada), o título (1) e o sumário (4 — a reserva do número, o branco,
+        // o ponto e o título da entrada). O incremental mede o bloco sujo (3) e o mesmo sumário.
+        Assert.Equal(35, full);
+        Assert.Equal(7, incremental);
     }
 
     /// <summary>

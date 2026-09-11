@@ -111,6 +111,46 @@ public sealed record PaginatedDocument(
         return this with { Pages = pages };
     }
 
+    /// <summary>
+    /// Posição no <see cref="Index"/> da linha que contém <paramref name="offset"/> — a última cujo
+    /// início não passou dele —, ou -1 num documento sem linha alguma.
+    /// </summary>
+    /// <remarks>
+    /// <b>Busca binária, e mora aqui porque o índice mora aqui.</b> Quem pergunta são dois: o caret,
+    /// para saber onde pousar, e o sumário, para saber em que folha um título caiu. Uma segunda
+    /// cópia desta busca seria a sexta cópia de uma invariante do motor — e a lição de que cinco
+    /// custaram uma fatia está escrita no CLAUDE.md.
+    /// </remarks>
+    public int FindLineIndex(int offset)
+    {
+        if (Index.Count == 0)
+        {
+            return -1;
+        }
+
+        var low = 0;
+        var high = Index.Count - 1;
+        var best = -1;
+
+        while (low <= high)
+        {
+            var mid = low + ((high - low) / 2);
+
+            if (Index[mid].SourceStart <= offset)
+            {
+                best = mid;
+                low = mid + 1;
+            }
+            else
+            {
+                high = mid - 1;
+            }
+        }
+
+        // Offset antes da primeira linha do documento — nada o cobre, e o caret pousa nela.
+        return best < 0 ? 0 : best;
+    }
+
     /// <summary>Documento sem nenhuma página é estado inválido: há sempre ao menos uma folha.</summary>
     public static PaginatedDocument Empty(PageSettings settings, TypographyPreset? typography = null) =>
         new([new PageLayout([])], settings) { Typography = typography ?? TypographyPreset.Default };
@@ -144,10 +184,25 @@ public sealed record PaginatedDocument(
             {
                 var line = lines[lineIndex];
 
+                // A linha gerada não tem posição na fonte, e por isso não entra: o índice é o mapa
+                // offset -> linha, e uma entrada de sumário reivindicaria offsets que não são dela.
+                if (line.IsGenerated)
+                {
+                    continue;
+                }
+
                 index[at++] = new LineRef(pageIndex, lineIndex, line.SourceStart, line.SourceLength);
                 sorted &= line.SourceStart >= previousStart;
                 previousStart = line.SourceStart;
             }
+        }
+
+        // O array foi dimensionado pelo total de linhas; as geradas não entraram, então o que
+        // sobra no fim seria LineRef(0,0,0,0) — offset zero, que a busca binária tomaria por linha
+        // de verdade.
+        if (at < index.Length)
+        {
+            Array.Resize(ref index, at);
         }
 
         if (!sorted)

@@ -46,6 +46,27 @@ public sealed class BlockMarkersTests
         Assert.Equal("abc\ndef", Source.Remove(range.Start, range.Length));
     }
 
+    /// <summary>
+    /// O <c>\toc</c> é apagado inteiro, como o <c>\page</c>.
+    /// </summary>
+    /// <remarks>
+    /// Duas tags, uma regra: apagar só o <c>\n</c> que isola um marcador o funde com o texto de
+    /// cima e ele passa a aparecer escrito na folha. A pergunta que o <c>BlockMarkers</c> faz é
+    /// pelo <c>LineKind</c> ser de marcador — não por ser quebra de página —, e é isso que fez o
+    /// sumário herdar o comportamento sem uma linha de código nova.
+    /// </remarks>
+    [Fact]
+    public void O_marcador_de_sumario_tambem_e_removido_inteiro()
+    {
+        // "abc\n\toc\ndef": o marcador ocupa [4,8) e o '\n' que o isola está em 8.
+        const string WithToc = "abc\n\\toc\ndef";
+
+        var document = Layout(WithToc);
+        var range = Assert.NotNull(BlockMarkers.BackspaceRange(9, document));
+
+        Assert.Equal("abc\ndef", WithToc.Remove(range.Start, range.Length));
+    }
+
     [Fact]
     public void Backspace_sobre_o_proprio_marcador_o_remove_inteiro()
     {

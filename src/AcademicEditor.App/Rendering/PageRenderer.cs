@@ -24,6 +24,9 @@ public static class PageRenderer
     /// <summary>Espaço em volta e entre as folhas — é o que faz a pilha parecer papel.</summary>
     public const double PageGapDip = 20.0;
 
+    /// <summary>Quanto da largura útil o filete do marcador de sumário ocupa.</summary>
+    private const double TocMarkerWidth = 0.25;
+
     /// <summary>Largura do caret em DIP, não em pontos: um fio de cabelo na tela, sempre.</summary>
     private const double CaretWidthDip = 1.0;
 
@@ -289,14 +292,20 @@ public static class PageRenderer
         {
             var baselineDip = contentTopDip + ((line.YPt + line.BaselinePt) * PtToDip);
 
-            if (line.Kind == LineKind.PageBreak)
+            if (line.Kind is LineKind.PageBreak or LineKind.TableOfContents)
             {
                 var y = contentTopDip + ((line.YPt + (line.HeightPt / 2.0)) * PtToDip);
+
+                // O filete do \page atravessa a folha, porque é ali que ela termina; o do \toc é
+                // curto, porque ele não corta nada — só marca onde o autor pediu o sumário, com as
+                // entradas logo abaixo dizendo o resto.
+                var widthDip = settings.ContentWidthPt * PtToDip
+                    * (line.Kind == LineKind.PageBreak ? 1.0 : TocMarkerWidth);
 
                 context.DrawLine(
                     PageBreakPen,
                     new Point(contentLeftDip, y),
-                    new Point(contentLeftDip + (settings.ContentWidthPt * PtToDip), y));
+                    new Point(contentLeftDip + widthDip, y));
 
                 continue;
             }
