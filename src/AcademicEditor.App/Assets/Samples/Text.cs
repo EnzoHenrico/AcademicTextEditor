@@ -6,6 +6,13 @@ public static class Text
     // porque é assim que o editor grava o que o autor digita: um \n é uma quebra visível. Quebrar
     // este texto à mão faria o motor mostrar as linhas curtas, fielmente.
    private const string UniqueFeaturesSource = """
+        ---
+        title: A paginação como layout em editores de texto acadêmico
+        author: Enzo Henrico
+        bib: referencias.bib
+        preset: abnt
+        ---
+        
         # Paginação em tempo real
 
         Este parágrafo é uma única linha na fonte, e o motor de layout a quebra conforme a largura útil da página — a largura do papel menos as margens. Redimensionar a janela não muda nada aqui, porque a quebra acontece em pontos tipográficos sobre a geometria da folha, não sobre o tamanho da tela.
@@ -48,6 +55,13 @@ public static class Text
    public static readonly string UniqueFeaturesCrLf = UniqueFeaturesLf.Replace("\n", "\r\n");
 
    public const string MarkdownFeatures = """"
+        ---
+        title: A paginação como layout em editores de texto acadêmico
+        author: Enzo Henrico
+        bib: referencias.bib
+        preset: abnt
+        ---
+
         md_content = """# Header Nível 1 (#)
         ## Header Nível 2 (##)
         ### Header Nível 3 (###)
