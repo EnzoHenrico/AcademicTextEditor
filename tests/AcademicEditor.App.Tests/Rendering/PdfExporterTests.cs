@@ -164,6 +164,27 @@ public sealed class PdfExporterTests
         };
     }
 
+    /// <summary>
+    /// Título e autor do cabeçalho de metadados chegam às propriedades do PDF.
+    /// </summary>
+    /// <remarks>
+    /// É o que faz um leitor mostrar o nome do trabalho na barra do título em vez de
+    /// "Dissertacao_v3_FINAL". Objetos nomeados no arquivo, procurados pelo nome — verificação
+    /// direta, e não proxy, que é a política destes testes desde a Fatia 3.
+    /// </remarks>
+    [Fact]
+    public void O_titulo_e_o_autor_entram_nas_propriedades_do_documento()
+    {
+        using var buffer = new MemoryStream();
+
+        PdfExporter.Export(Document(1), buffer, "Uma tese paginada", "Alguem");
+
+        var pdf = Encoding.Latin1.GetString(buffer.ToArray());
+
+        Assert.Contains("/Title (Uma tese paginada)", pdf, StringComparison.Ordinal);
+        Assert.Contains("/Author (Alguem)", pdf, StringComparison.Ordinal);
+    }
+
     // Latin1 porque um PDF mistura estrutura em ASCII com fluxos binários: é a codificação que
     // mapeia cada byte a um caractere sem perder nenhum, e é só a estrutura que se procura aqui.
     private static string Export(PaginatedDocument document)

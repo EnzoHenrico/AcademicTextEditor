@@ -125,6 +125,22 @@ public static class LayoutEngine
                 revealed = new TextRange(block.SourceStart, block.SourceLength);
             }
 
+            // Altura zero e sem run: cobre o trecho do buffer e não ocupa papel nenhum. É a
+            // combinação que mantém o mapa offset -> linha total sem o cabeçalho aparecer na folha.
+            if (block is FrontMatterNode)
+            {
+                breaker.AddLine(new LaidOutLine(
+                    YPt: 0.0,
+                    HeightPt: 0.0,
+                    BaselinePt: 0.0,
+                    [],
+                    block.SourceStart,
+                    block.SourceLength,
+                    LineKind.FrontMatter));
+
+                continue;
+            }
+
             if (block is TocNode)
             {
                 headings ??= TableOfContents.Collect(document);
@@ -368,7 +384,8 @@ public static class LayoutEngine
 
             // O marcador de quebra de página não tem marcação a revelar, e o texto dele não muda
             // numa travessia: a linha anterior serve, e reaproveitá-la preserva o ForcePageBreak.
-            if ((index == rebreakFirst || index == rebreakSecond) && block is not PageBreakNode)
+            if ((index == rebreakFirst || index == rebreakSecond)
+                && block is not PageBreakNode and not FrontMatterNode)
             {
                 foreach (var line in LineBreaker.BreakIntoLines(
                     block.Runs,

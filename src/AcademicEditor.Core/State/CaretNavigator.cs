@@ -137,11 +137,13 @@ public static class CaretNavigator
     /// <remarks>
     /// Clicar numa entrada de sumário atinge uma linha <b>sem offset nenhum</b>. Para trás
     /// primeiro, pela mesma razão da folha em branco: o caret pertence ao texto que veio antes, e
-    /// antes de toda entrada está o marcador <c>\toc</c>, que é o que o autor tem para editar.
+    /// antes de toda entrada está o marcador <c>\toc</c>, que é o que o autor tem para editar. Se
+    /// não houver nada atrás — é o caso do cabeçalho de metadados, que é a primeira linha do
+    /// documento —, para a frente.
     /// </remarks>
     private static (int PageIndex, int LineIndex) Land(PaginatedDocument document, int page, int line)
     {
-        if (!document.Pages[page].Lines[line].IsGenerated)
+        if (document.Pages[page].Lines[line].AcceptsCaret)
         {
             return (page, line);
         }

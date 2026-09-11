@@ -13,6 +13,12 @@ namespace AcademicEditor.Core.State;
 /// relatado. A tecla de apagar tem de remover o marcador inteiro ou não tocá-lo.
 /// </para>
 /// <para>
+/// <b>A fronteira do cabeçalho de metadados não mora aqui</b>, e já morou: ela depende do
+/// <i>texto</i>, não do layout, e o dono dela é <c>FrontMatter.BodyStart</c>. Derivá-la das linhas
+/// publicadas dava a resposta certa um quadro tarde — e o preço de um quadro tarde ali não é um
+/// caret fora do lugar, é o arquivo salvo com o cabeçalho desmanchado.
+/// </para>
+/// <para>
 /// Mora no Core, e não no ViewModel, porque a decisão depende do <see cref="PaginatedDocument"/> e
 /// porque é a regra que precisa de teste — a camada visual só obedece.
 /// </para>

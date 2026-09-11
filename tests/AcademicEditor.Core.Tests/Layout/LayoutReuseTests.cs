@@ -38,6 +38,9 @@ public sealed class LayoutReuseTests
     [InlineData("\\toc\n\n# Tit\n\ncorpo", "\\toc\n\n# Tit\n\ncorpoX", 20)]
     // Editar o próprio título: o texto da entrada muda junto, na mesma tecla.
     [InlineData("\\toc\n\n# Tit\n\ncorpo", "\\toc\n\n# Titu\n\ncorpo", 11)]
+    // Com cabeçalho de metadados: o bloco dele não tem run e não pode ser requebrado, mas está no
+    // índice e é consumido como qualquer outro — e os offsets do corpo começam depois dele.
+    [InlineData("---\ntitle: x\n---\ncorpo", "---\ntitle: x\n---\ncorpoX", 22)]
     public void Reaproveitar_devolve_o_mesmo_documento_que_paginar_do_zero(string before, string after, int caret)
     {
         var previous = Layout(before, caret);

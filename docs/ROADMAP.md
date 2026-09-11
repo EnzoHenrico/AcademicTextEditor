@@ -1671,17 +1671,17 @@ Registrado desta fatia:
   título à esquerda. É visível na primeira folha de qualquer documento, não é desta fatia, e vai para
   a lista de devidos ao lado das margens de 3cm/2cm
 
-### Fatia 6.1 — Front matter de metadados ⬜
+### Fatia 6.1 — Front matter de metadados ✅
 
 Fatia nova, decidida em conversa e **entregue antes da 5c**, porque é ela que responde a pergunta que
 segurava aquela: **de onde vem o `.bib`**. Hoje o `{title}` do cabeçalho é o nome do arquivo, e
 preset, margens e faixas nascem fixos no `MainWindow` — nada disso sobrevive a fechar o app nem varia
 por documento.
 
-- [ ] `---` … `---` no topo do arquivo, YAML, subconjunto plano (`chave: valor` escalar)
-- [ ] `DocumentMetadata` no Core; o App lê e atribui a `Typography`, `Bands.DocumentTitle` e ao
-      caminho do `.bib`
-- [ ] Uma linha atômica de altura zero cobrindo `[0, K)`, pela máquina do `\page`
+- [x] `---` … `---` no topo do arquivo, YAML, subconjunto plano (`chave: valor` escalar)
+- [x] `DocumentMetadata` no Core, com `title`, `author`, `bib` e `preset`; o App o consulta —
+      **não atribui de volta**, e é isso que faz o laço que o plano temia não existir
+- [x] Uma linha de altura zero cobrindo `[0, K)`, com offset e sem caret
 
 **`---`, e não `\meta\` … `/meta/`.** A escolha é interoperabilidade contra coerência, e ganhou a
 primeira: Pandoc, Obsidian e Jekyll já leem e escondem front matter. Consequência aceita e registrada
@@ -1707,6 +1707,69 @@ Três decisões que vão junto, e cada uma tem o seu teste:
 - **Cuidado com o laço**: o App atribui `Typography` durante a publicação e o setter agenda
   repaginação. A comparação por valor do record corta na segunda passada — para provar com teste,
   não para supor
+
+**Medido e conferido:** o mesmo arquivo, trocando uma linha (`preset: abnt` → `preset: default`),
+compõe em serifada corpo 12 justificada com entrelinhamento 1,5 ou em sem serifa corpo 11 alinhada
+à esquerda. As duas folhas foram capturadas com o `--screenshot`, que é o renderizador de verdade
+sobre a configuração que o aplicativo executa.
+
+Registrado desta fatia:
+
+- **O laço não existe porque a atribuição de volta não acontece.** O plano previa o App atribuir
+  `Typography` e contava com a comparação por valor para cortar na segunda passada. Escrevendo,
+  ficou claro que há um desenho sem laço nenhum: o cabeçalho é lido **dentro** do `Task.Run`, antes
+  do parser, e as propriedades do ViewModel passam a ser **o padrão de quem não declarou nada**.
+  Some a repaginação extra, some a ordem entre atribuir e publicar, e o `PaginatedDocument` continua
+  carimbando a norma que o produziu — que é o que o `LayoutEngine.Reuse` compara
+- **"O cabeçalho manda" ganhou dono depois de ser escrita duas vezes.** A regra é de uma linha
+  (`Typography ?? padrão`), e por isso mesmo apareceu no ViewModel e na captura de tela. Virou
+  `DocumentMetadata.NormOver`/`BandsOver`: a primeira divergência entre as duas cópias seria uma
+  conferência descrevendo um documento que ninguém abre — exatamente a falha da PR #6
+- **O `FindLine` ganhou uma segunda tranca, e foi um teste que a pediu.** O caret é grampeado no
+  começo do corpo quando o layout é publicado, mas `CaretGeometry.Locate` de um offset do cabeçalho
+  continuava devolvendo a linha de altura zero — uma barra que sumiu da tela. Agora ele anda até a
+  primeira linha que aceita caret. Duas trancas porque a primeira depende de cada caminho de edição
+  lembrar dela, e a segunda não depende de ninguém
+- **`TextRange.Empty` é a terceira resposta do `BackspaceRange`**: nem "não há marcador" (`null`),
+  nem "apague isto", mas "não apague nada". Quem consome já trata comprimento zero como nada a
+  fazer, então a recusa não abriu caminho novo — e não abre grupo de undo nem pede repaginação por
+  uma tecla que não mudou o texto
+- **Consequência aceita, e é a que mais se sente: o cabeçalho é somente leitura dentro do editor.**
+  O caret não entra nele por construção, então dá para **criar** um (digitar as duas cercas) mas não
+  para corrigir uma chave depois. Quem quiser mudar `title:` hoje usa outro editor. Quem o torna
+  editável é o modal da **Fatia 7**, e é o primeiro uso real do `FocusScopeTracker` que aquela fatia
+  já previa
+- **O `{title}` ainda não aparece em folha nenhuma, e isso não é bug desta fatia.**
+  `HeaderFooterSettings.Abnt` põe só o `{page}` no alto, porque a norma não pede título corrente. O
+  `title:` chega às **propriedades do PDF** — que é onde um leitor mostra o nome do trabalho em vez
+  de "Dissertacao_v3_FINAL" — e estará no `{title}` de quem configurar uma faixa que o use. O que
+  a fatia acabou foi a fonte errada, não a falta de vitrine
+- **O `bib` é lido e guardado sem consumidor.** É a chave que existe para a Fatia 5c, e é o motivo
+  desta fatia vir antes dela. Guardar um caminho que ninguém usa é aceitável; resolver `[@cite]`
+  sem saber de onde vem o arquivo não era
+- **"Não conferido: abrir e salvar" era a ressalva certa, e ela cobrava.** A primeira entrega
+  perdia o cabeçalho no arquivo salvo, e foi encontrada na conferência à mão. **Duas falhas, uma
+  causa:** as duas proteções — o caret grampeado e a recusa do Backspace — saíam do **layout
+  publicado**, e entre abrir um arquivo e a primeira paginação terminar há centenas de
+  milissegundos num documento longo. Uma tecla nessa janela entrava *dentro* do cabeçalho, e o
+  sintoma não é um caret fora do lugar: é o arquivo gravado com o cabeçalho desmanchado
+- **A fronteira é do texto, não do layout — e agora tem um dono só.** `FrontMatter.BodyStart` já
+  era esse dono; o que estava errado era derivar a mesma resposta de uma segunda fonte.
+  `BlockMarkers.IsBodyStart` foi **removido**: ele lia a fronteira das linhas publicadas, o que dá a
+  resposta certa um quadro tarde. O caret passa a nascer no começo do corpo calculado do próprio
+  texto — na construção e ao abrir —, e o Backspace compara com essa conta. O comentário do
+  `EditorViewModel` sobre "ler o layout publicado custa até um quadro de atraso" continua valendo
+  para a linha em branco do Enter; aqui o preço do atraso era outro
+- **`EditorViewModel` ganhou o primeiro teste, e ele é de gravação.** Sete casos que terminam num
+  `IDocumentStorage` falso e comparam o texto que foi para o disco: digitar, `Ctrl+A` e digitar,
+  Backspace na fronteira, arquivo CRLF, criar o cabeçalho digitando, e o fluxo de verdade — abrir,
+  **esperar a paginação** e só então editar. Três deles ficam vermelhos no código anterior. É o
+  quinto argumento a favor de `tests/AcademicEditor.App.Tests/` e o primeiro em que a consequência
+  não era visual, era o arquivo do autor
+- **Ressalva honesta sobre a correção:** o fluxo em estado estável — abrir, esperar o layout,
+  digitar, salvar — **já passava antes**, e continua passando. Os três vermelhos estão todos na
+  janela anterior à primeira paginação. Se o cabeçalho sumir de novo por um caminho fora dessa
+  janela, é caminho novo e não é este
 
 ### Fatia 7 — Modal de configurações e menu ⬜
 

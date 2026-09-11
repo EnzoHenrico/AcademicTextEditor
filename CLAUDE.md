@@ -148,6 +148,15 @@ num exportador PDF/CLI depois. A única costura Core↔App é a interface `IText
   e a navegação, o clique e a seleção a atravessam sem parar. `LaidOutLine.IsGenerated` é o nome
   disso. É a forma forte da mesma decisão do `BandRun`: um offset falso não quebra o desenho, quebra
   o caret, longe de onde se errou.
+- **O cabeçalho de metadados é `---` … `---` no topo, e nunca aparece na folha.** `---` porque
+  Pandoc, Obsidian e Jekyll já leem e escondem front matter — interoperabilidade ganhou de coerência
+  com a família do `\page`, e é por isso que a forma pareada de tag ficou sem cliente. Ele vira uma
+  linha com offset e **altura zero**: cobre o trecho, para o mapa `offset → linha` continuar total,
+  e não recebe caret, porque uma barra de altura zero é uma barra que sumiu da tela. Quem manda é o
+  documento: `DocumentMetadata.NormOver`/`BandsOver` decidem a norma e o `{title}`, e as
+  propriedades do `EditorViewModel` são só o padrão de quem não declarou nada — **o App não atribui
+  de volta**, e é isso que faz não existir laço de repaginação. Consequência aceita: o cabeçalho é
+  somente leitura dentro do editor até o modal da Fase 6, Fatia 7.
 - **A ordem dos passes de publicação tem um dono: `LayoutEngine.Publish`.** Paginar, escrever os
   números do sumário e montar cabeçalho e rodapé são três passes com ordem obrigatória — os dois
   últimos dependem de já haver folha. Quem montar a sequência por fora acaba esquecendo um passe, e
